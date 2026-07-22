@@ -44,7 +44,10 @@ export default function AttendanceReviewPage() {
       const records = (data as unknown as AttendanceRecord[]) || []
       setAttendance(records)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Gagal memuat data absensi'
+      let msg = 'Gagal memuat data absensi'
+      if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+        msg = err.message
+      }
       setErrorMsg(msg)
     } finally {
       setLoading(false)

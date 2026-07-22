@@ -13,6 +13,9 @@ type DateRangePreset = 'custom' | 'today' | 'week' | 'month'
 export default function ExportsPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [jobScopes, setJobScopes] = useState<string[]>([])
+  const [selectedJobScope, setSelectedJobScope] = useState('')
+  
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [activePreset, setActivePreset] = useState<DateRangePreset>('custom')
@@ -32,6 +35,27 @@ export default function ExportsPage() {
         setProjects((res.data as Project[]) || [])
       })
   }, [])
+
+  // Auto-fetch unique job scopes when project is selected
+  useEffect(() => {
+    if (selectedProjectId) {
+      supabase.from('workers')
+        .select('job_scope')
+        .eq('project_id', selectedProjectId)
+        .then((res: { data: { job_scope: string | null }[] | null }) => {
+          const rawScopes = res.data || []
+          const scopes = Array.from(new Set(rawScopes.map(w => w.job_scope).filter((s): s is string => !!s)))
+          setTimeout(() => {
+            setJobScopes(scopes)
+          }, 0)
+        })
+    } else {
+      setTimeout(() => {
+        setJobScopes([])
+        setSelectedJobScope('')
+      }, 0)
+    }
+  }, [selectedProjectId])
 
   const applyPreset = (preset: DateRangePreset) => {
     setActivePreset(preset)
@@ -76,7 +100,12 @@ export default function ExportsPage() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ projectId: selectedProjectId, startDate, endDate })
+        body: JSON.stringify({ 
+          projectId: selectedProjectId, 
+          startDate, 
+          endDate,
+          jobScope: selectedJobScope || null
+        })
       })
 
       if (!res.ok) {
@@ -114,7 +143,12 @@ export default function ExportsPage() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ projectId: selectedProjectId, startDate, endDate })
+        body: JSON.stringify({ 
+          projectId: selectedProjectId, 
+          startDate, 
+          endDate,
+          jobScope: selectedJobScope || null
+        })
       })
 
       if (!res.ok) {
@@ -152,7 +186,12 @@ export default function ExportsPage() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ projectId: selectedProjectId, startDate, endDate })
+        body: JSON.stringify({ 
+          projectId: selectedProjectId, 
+          startDate, 
+          endDate,
+          jobScope: selectedJobScope || null
+        })
       })
 
       if (!res.ok) {
@@ -281,19 +320,36 @@ export default function ExportsPage() {
           </div>
         )}
 
-        {/* Project Selection */}
-        <div className="mb-6">
-          <label className="block text-sm font-semibold text-slate-700 mb-1">Proyek</label>
-          <select
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none"
-            value={selectedProjectId}
-            onChange={e => setSelectedProjectId(e.target.value)}
-          >
-            <option value="">Pilih Proyek...</option>
-            {projects.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+        {/* Project & JobScope selection */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Proyek</label>
+            <select
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none"
+              value={selectedProjectId}
+              onChange={e => setSelectedProjectId(e.target.value)}
+            >
+              <option value="">Pilih Proyek...</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Job Scope (Opsional)</label>
+            <select
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-850 focus:outline-none disabled:opacity-50"
+              value={selectedJobScope}
+              onChange={e => setSelectedJobScope(e.target.value)}
+              disabled={!selectedProjectId}
+            >
+              <option value="">Semua Job Scope</option>
+              {jobScopes.map(scope => (
+                <option key={scope} value={scope}>{scope}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Quick Date Range Presets */}
@@ -434,7 +490,7 @@ export default function ExportsPage() {
           <p className="text-xs text-blue-700">
             Ekspor ini menghasilkan file Excel yang berisi daftar lengkap absensi per hari beserta <strong>foto bukti yang disematkan langsung di setiap baris</strong>.
             Foto ditampilkan sebagai gambar di kolom terakhir sehingga bisa langsung dilihat tanpa membuka file terpisah.
-            Format kolom: No, Tanggal & Waktu, Nama Pekerja, NIK, Tipe (Masuk/Pulang), Sumber, Status, Foto Bukti.
+            Format kolom: No, Tanggal, Jam, Nama Pekerja, Tipe (Masuk/Pulang), Foto Bukti.
           </p>
         </div>
       </div>

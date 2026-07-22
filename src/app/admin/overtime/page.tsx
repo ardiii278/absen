@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
 interface Worker {
@@ -15,6 +16,7 @@ interface OvertimeRecord {
   work_date: string
   hours: number | null
   status: 'pending_approval' | 'approved' | 'rejected'
+  evidence_path: string | null
   projects: {
     name: string
   } | null
@@ -31,12 +33,19 @@ export default function OvertimePage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
   // Creation State
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [workDate, setWorkDate] = useState('')
   const [hours, setHours] = useState(1.5)
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([])
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
+  const [submitLoading, setSubmitLoading] = useState(false)
+
+  // Preview State
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null)
+  const [previewTitle, setPreviewTitle] = useState('')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -52,7 +61,7 @@ export default function OvertimePage() {
 
       const { data: otData, error: otErr } = await supabase
         .from('overtime')
-        .select('id, work_date, hours, status, projects(name)')
+        .select('id, work_date, hours, status, evidence_path, projects(name)')
         .order('work_date', { ascending: false })
 
       if (otErr) throw otErr
@@ -60,7 +69,10 @@ export default function OvertimePage() {
       const records = (otData as unknown as OvertimeRecord[]) || []
       setOvertimes(records)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Gagal memuat data'
+      let msg = 'Gagal memuat data'
+      if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+        msg = err.message
+      }
       setErrorMsg(msg)
     } finally {
       setLoading(false)
@@ -77,15 +89,31 @@ export default function OvertimePage() {
   const handleCreateOvertime = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg(null)
+    setSuccessMsg(null)
 
     if (!selectedProjectId || !workDate || selectedWorkerIds.length === 0) {
       setErrorMsg('Semua field wajib diisi termasuk checklist pekerja.')
       return
     }
 
+    setSubmitLoading(true)
     try {
       const userRes = await supabase.auth.getUser()
       if (userRes.error) throw userRes.error
+
+      let evidencePath = null
+      if (evidenceFile) {
+        const fileExt = evidenceFile.name.split('.').pop()
+        const fileName = `${crypto.randomUUID()}.${fileExt}`
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('kiosk-photos')
+          .upload(`overtime/${fileName}`, evidenceFile)
+
+        if (uploadErr) {
+          throw new Error('Gagal mengunggah foto bukti lembur: ' + uploadErr.message)
+        }
+        evidencePath = uploadData?.path || null
+      }
 
       // 1. Create Overtime entry
       const { data: otData, error: otErr } = await supabase
@@ -94,6 +122,7 @@ export default function OvertimePage() {
           project_id: selectedProjectId,
           work_date: workDate,
           hours: hours,
+          evidence_path: evidencePath,
           status: 'pending_approval',
           created_by: userRes.data.user?.id || null
         })
@@ -110,7 +139,13 @@ export default function OvertimePage() {
       }))
 
       const { error: mapErr } = await supabase.from('overtime_workers').insert(mappings)
-      if (mapErr) throw mapErr
+      if (mapErr) {
+        // Rollback uploaded file if DB insert fails
+        if (evidencePath) {
+          await supabase.storage.from('kiosk-photos').remove([evidencePath])
+        }
+        throw mapErr
+      }
 
       // 3. Log to Audit
       const { error: logErr } = await supabase.from('audit_logs').insert({
@@ -119,22 +154,31 @@ export default function OvertimePage() {
         entity_id: otData.id,
         action: 'CREATED_OVERTIME_REQUEST',
         reason: `Pengajuan lembur ${hours} jam`,
-        new_data: { work_date: workDate, hours, workers: selectedWorkerIds }
+        new_data: { work_date: workDate, hours, workers: selectedWorkerIds, evidence_path: evidencePath }
       })
       if (logErr) console.error('Gagal menulis audit log:', logErr.message)
 
-      // Reset
+      // Reset form
       setSelectedWorkerIds([])
       setWorkDate('')
+      setEvidenceFile(null)
+      // Reset input element
+      const fileInput = document.getElementById('evidence_file_input') as HTMLInputElement
+      if (fileInput) fileInput.value = ''
+
+      setSuccessMsg('Pengajuan lembur berhasil dikirim.')
       await fetchData()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal membuat lembur'
       setErrorMsg(msg)
+    } finally {
+      setSubmitLoading(false)
     }
   }
 
   const handleApproveOvertime = async (id: string, status: 'approved' | 'rejected') => {
     setErrorMsg(null)
+    setSuccessMsg(null)
     try {
       const { error } = await supabase.from('overtime').update({ status }).eq('id', id)
       if (error) throw error
@@ -150,10 +194,28 @@ export default function OvertimePage() {
       })
       if (logErr) console.error('Gagal menulis audit log:', logErr.message)
 
+      setSuccessMsg(`Pengajuan lembur berhasil ${status === 'approved' ? 'disetujui' : 'ditolak'}.`)
       await fetchData()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal memproses approval lembur'
       setErrorMsg(msg)
+    }
+  }
+
+  const handlePreviewPhoto = async (record: OvertimeRecord) => {
+    if (!record.evidence_path) return
+    setPreviewPhotoUrl(null)
+    setPreviewTitle(`Foto Bukti Lembur - ${record.projects?.name} (${new Date(record.work_date).toLocaleDateString('id-ID')})`)
+    try {
+      const { data, error } = await supabase.storage
+        .from('kiosk-photos')
+        .createSignedUrl(record.evidence_path, 60)
+
+      if (error) throw error
+      if (data) setPreviewPhotoUrl(data.signedUrl)
+    } catch (err) {
+      console.error('Gagal memuat foto bukti:', err)
+      setErrorMsg('Gagal memuat foto bukti lembur.')
     }
   }
 
@@ -174,6 +236,12 @@ export default function OvertimePage() {
         {errorMsg && (
           <div className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-100">
             {errorMsg}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mb-4 p-3 bg-emerald-50 text-emerald-700 text-xs rounded-lg border border-emerald-100">
+            {successMsg}
           </div>
         )}
 
@@ -217,6 +285,21 @@ export default function OvertimePage() {
             />
           </div>
 
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Foto Bukti Lembur</label>
+            <input
+              id="evidence_file_input"
+              type="file"
+              accept="image/jpeg,image/png"
+              className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+              onChange={e => {
+                if (e.target.files && e.target.files[0]) {
+                  setEvidenceFile(e.target.files[0])
+                }
+              }}
+            />
+          </div>
+
           {selectedProjectId && (
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-2">Checklist Pekerja Aktif</label>
@@ -241,9 +324,10 @@ export default function OvertimePage() {
 
           <button
             type="submit"
-            className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-semibold transition"
+            disabled={submitLoading}
+            className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
           >
-            Kirim Pengajuan
+            {submitLoading ? 'Mengirim...' : 'Kirim Pengajuan'}
           </button>
         </form>
       </div>
@@ -259,6 +343,7 @@ export default function OvertimePage() {
                 <th className="py-3 px-4">Proyek</th>
                 <th className="py-3 px-4">Tanggal Kerja</th>
                 <th className="py-3 px-4">Jam Lembur</th>
+                <th className="py-3 px-4">Bukti Foto</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Aksi</th>
               </tr>
@@ -266,11 +351,11 @@ export default function OvertimePage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">Memuat data...</td>
+                  <td colSpan={6} className="py-8 text-center text-slate-400">Memuat data...</td>
                 </tr>
               ) : overtimes.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">Belum ada pengajuan lembur.</td>
+                  <td colSpan={6} className="py-8 text-center text-slate-400">Belum ada pengajuan lembur.</td>
                 </tr>
               ) : (
                 overtimes.map(ot => (
@@ -278,6 +363,18 @@ export default function OvertimePage() {
                     <td className="py-3 px-4 font-semibold text-sm">{ot.projects?.name}</td>
                     <td className="py-3 px-4 text-sm">{new Date(ot.work_date).toLocaleDateString('id-ID')}</td>
                     <td className="py-3 px-4 font-medium">{ot.hours} Jam</td>
+                    <td className="py-3 px-4">
+                      {ot.evidence_path ? (
+                        <button
+                          onClick={() => handlePreviewPhoto(ot)}
+                          className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-xs font-semibold transition"
+                        >
+                          Lihat Foto
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">Tidak ada</span>
+                      )}
+                    </td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
                         ot.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
@@ -313,6 +410,24 @@ export default function OvertimePage() {
           </table>
         </div>
       </div>
+
+      {/* PHOTO PREVIEW MODAL */}
+      {previewPhotoUrl && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full flex flex-col items-center">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">{previewTitle}</h3>
+            <div className="relative w-full aspect-video mb-4 rounded-xl overflow-hidden border border-slate-200">
+              <Image src={previewPhotoUrl} alt="Bukti Lembur" fill className="object-contain" unoptimized />
+            </div>
+            <button
+              onClick={() => setPreviewPhotoUrl(null)}
+              className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-semibold transition"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -178,8 +178,14 @@ create policy "Admins can view their project bindings" on admin_projects
   for select using (user_id = auth.uid() or exists (select 1 from profiles where id = auth.uid() and role = 'super_admin'));
 
 -- Policies for kiosk_accounts
-create policy "Kiosk account self access" on kiosk_accounts
-  for select using (auth_user_id = auth.uid() or exists (select 1 from profiles where id = auth.uid() and role = 'super_admin'));
+create policy "Admins can manage kiosk accounts" on kiosk_accounts
+  for all using (
+    auth_user_id = auth.uid() or 
+    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+  ) with check (
+    auth_user_id = auth.uid() or 
+    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+  );
 
 -- Policies for workers
 create policy "Read active/pending workers on allowed projects" on workers
@@ -291,3 +297,33 @@ create index idx_attendance_project_id_occurred_at on attendance(project_id, occ
 create index idx_overtime_project_id on overtime(project_id);
 create index idx_workers_project_id on workers(project_id);
 create index idx_workers_nik on workers(nik);
+
+-- Private Storage Policies for kiosk-photos bucket
+-- Ensure RLS is enabled on storage.objects if not already
+alter table storage.objects enable row level security;
+
+create policy "Allow insert access to kiosk-photos" on storage.objects
+  for insert with check (bucket_id = 'kiosk-photos');
+
+create policy "Allow select access to kiosk-photos" on storage.objects
+  for select using (
+    bucket_id = 'kiosk-photos' and (
+      -- Super admin can read everything
+      exists (select 1 from profiles where id = auth.uid() and role = 'super_admin')
+      or
+      -- Admin and kiosk can read temp/ and evidence/
+      (
+        not (name like 'private/%') and
+        (
+          exists (select 1 from profiles where id = auth.uid() and role = 'admin') or
+          exists (select 1 from profiles where id = auth.uid() and role = 'kiosk')
+        )
+      )
+    )
+  );
+
+create policy "Allow delete access to kiosk-photos" on storage.objects
+  for delete using (
+    bucket_id = 'kiosk-photos' and
+    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+  );

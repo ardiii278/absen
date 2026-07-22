@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
 interface Worker {
@@ -34,6 +35,13 @@ export default function WorkerApprovalPage() {
   const [targetJobScope, setTargetJobScope] = useState('')
   const [projects, setProjects] = useState<Project[]>([])
 
+  // Detail / Preview modal state
+  const [previewWorker, setPreviewWorker] = useState<Worker | null>(null)
+  const [previewProfileUrl, setPreviewProfileUrl] = useState<string | null>(null)
+  const [previewKtpUrl, setPreviewKtpUrl] = useState<string | null>(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [userRole, setUserRole] = useState<string | null>(null)
+
   const fetchWorkers = useCallback(async () => {
     setLoading(true)
     setErrorMsg(null)
@@ -46,7 +54,10 @@ export default function WorkerApprovalPage() {
       if (error) throw error
       setWorkers((data as Worker[]) || [])
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Gagal mengambil data pekerja'
+      let msg = 'Gagal mengambil data pekerja'
+      if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+        msg = err.message
+      }
       setErrorMsg(msg)
     } finally {
       setLoading(false)
@@ -55,8 +66,7 @@ export default function WorkerApprovalPage() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('projects').select('id, name')
-      if (error) throw error
+      const { data } = await supabase.from('projects').select('id, name')
       setProjects((data as Project[]) || [])
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal mengambil data proyek'
@@ -64,13 +74,32 @@ export default function WorkerApprovalPage() {
     }
   }, [])
 
+  const fetchUserRole = useCallback(async () => {
+    try {
+      const sessionRes = await supabase.auth.getSession()
+      if (sessionRes.data.session) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', sessionRes.data.session.user.id)
+          .maybeSingle()
+        if (profile) {
+          setUserRole(profile.role)
+        }
+      }
+    } catch {
+      console.error('Gagal memverifikasi role user')
+    }
+  }, [])
+
   useEffect(() => {
     const t = setTimeout(() => {
       fetchWorkers()
       fetchProjects()
+      fetchUserRole()
     }, 0)
     return () => clearTimeout(t)
-  }, [fetchWorkers, fetchProjects])
+  }, [fetchWorkers, fetchProjects, fetchUserRole])
 
   const handleApprove = async (worker: Worker) => {
     setErrorMsg(null)
@@ -119,6 +148,8 @@ export default function WorkerApprovalPage() {
       })
       if (logErr) console.error('Gagal menulis audit log:', logErr.message)
 
+      // Close preview if it was open
+      setPreviewWorker(null)
       await fetchWorkers()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal menyetujui pekerja'
@@ -155,10 +186,68 @@ export default function WorkerApprovalPage() {
       setIsRejecting(false)
       setSelectedWorker(null)
       setRejectReason('')
+      setPreviewWorker(null)
       await fetchWorkers()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal menolak pekerja'
       setErrorMsg(msg)
+    }
+  }
+
+  const handleShowDetail = async (worker: Worker) => {
+    setPreviewWorker(worker)
+    setPreviewProfileUrl(null)
+    setPreviewKtpUrl(null)
+    setLoadingDetail(true)
+
+    try {
+      // 1. Generate signed URL for profile photo
+      if (worker.profile_path) {
+        const { data: profData } = await supabase.storage
+          .from('kiosk-photos')
+          .createSignedUrl(worker.profile_path, 60)
+        if (profData) {
+          setPreviewProfileUrl(profData.signedUrl)
+        }
+      }
+
+      // 2. Generate signed URL for KTP photo
+      if (worker.ktp_private_path) {
+        const isPrivate = worker.ktp_private_path.startsWith('private/')
+        if (isPrivate) {
+          if (userRole !== 'super_admin') {
+            setPreviewKtpUrl('restricted')
+          } else {
+            const sessionRes = await supabase.auth.getSession()
+            const token = sessionRes.data.session?.access_token
+            const res = await fetch('/api/signed-ktp', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ workerId: worker.id })
+            })
+            const data = await res.json()
+            if (res.ok && data.signedUrl) {
+              setPreviewKtpUrl(data.signedUrl)
+            } else {
+              setPreviewKtpUrl(null)
+            }
+          }
+        } else {
+          const { data: ktpData } = await supabase.storage
+            .from('kiosk-photos')
+            .createSignedUrl(worker.ktp_private_path, 60)
+          if (ktpData) {
+            setPreviewKtpUrl(ktpData.signedUrl)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Gagal memuat URL detail foto:', err)
+    } finally {
+      setLoadingDetail(false)
     }
   }
 
@@ -347,25 +436,33 @@ export default function WorkerApprovalPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
-                      {worker.status === 'pending_approval' && (
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => handleApprove(worker)}
-                            className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-medium transition"
-                          >
-                            Setujui
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedWorker(worker)
-                              setIsRejecting(true)
-                            }}
-                            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium transition"
-                          >
-                            Tolak
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => handleShowDetail(worker)}
+                          className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-medium transition"
+                        >
+                          Tinjau
+                        </button>
+                        {worker.status === 'pending_approval' && (
+                          <>
+                            <button
+                              onClick={() => handleApprove(worker)}
+                              className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-medium transition"
+                            >
+                              Setujui
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedWorker(worker)
+                                setIsRejecting(true)
+                              }}
+                              className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium transition"
+                            >
+                              Tolak
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -402,6 +499,134 @@ export default function WorkerApprovalPage() {
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
                 >
                   Batal
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DETAIL / PREVIEW MODAL */}
+        {previewWorker && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">Tinjau Pendaftaran Pekerja</h3>
+                  <p className="text-xs text-slate-500 mt-1">Review data profil, NIK, dan dokumen KTP sebelum menyetujui</p>
+                </div>
+                <button
+                  onClick={() => setPreviewWorker(null)}
+                  className="text-slate-400 hover:text-slate-600 text-2xl"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                {/* Meta details */}
+                <div className="space-y-4 md:col-span-1 border-r border-slate-100 pr-4">
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Nama Lengkap</label>
+                    <p className="text-sm font-semibold text-slate-800">{previewWorker.name}</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">NIK (16 Digit)</label>
+                    <p className="text-sm font-mono text-slate-800">{previewWorker.nik}</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Jabatan</label>
+                    <p className="text-sm font-semibold text-slate-800">
+                      {previewWorker.position === 'TK' ? 'Tenaga Kerja (TK)' : 'Kepala Regu (KN)'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Job Scope</label>
+                    <p className="text-sm font-semibold text-slate-800">{previewWorker.job_scope}</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Status Akun</label>
+                    <p className="mt-1">
+                      <span className={`px-2.5 py-0.5 rounded text-xs font-semibold ${
+                        previewWorker.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
+                        previewWorker.status === 'rejected' ? 'bg-red-50 text-red-700' :
+                        'bg-amber-50 text-amber-700'
+                      }`}>
+                        {previewWorker.status === 'approved' ? 'Aktif / Disetujui' :
+                         previewWorker.status === 'rejected' ? 'Ditolak' : 'Menunggu Approval'}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Photos Panel */}
+                <div className="md:col-span-2 space-y-4">
+                  {loadingDetail ? (
+                    <div className="py-20 text-center text-slate-400 text-sm">Memuat foto bukti...</div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Profile Photo */}
+                      <div className="flex flex-col items-center p-3 border border-slate-100 rounded-xl bg-slate-50">
+                        <span className="text-xs font-bold text-slate-500 mb-2">Foto Profil Wajah</span>
+                        {previewProfileUrl ? (
+                          <div className="relative w-full aspect-square max-w-[200px] rounded-lg overflow-hidden border border-slate-200">
+                            <Image src={previewProfileUrl} alt="Profil" fill className="object-cover" unoptimized />
+                          </div>
+                        ) : (
+                          <div className="w-full aspect-square max-w-[200px] bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs">
+                            Tidak ada foto
+                          </div>
+                        )}
+                      </div>
+
+                      {/* KTP Photo */}
+                      <div className="flex flex-col items-center p-3 border border-slate-100 rounded-xl bg-slate-50">
+                        <span className="text-xs font-bold text-slate-500 mb-2">Foto KTP Dokumen</span>
+                        {previewKtpUrl === 'restricted' ? (
+                          <div className="w-full aspect-square max-w-[200px] bg-red-50 border border-red-100 rounded-lg flex flex-col items-center justify-center text-center p-4">
+                            <p className="text-xs font-bold text-red-700">Akses Terbatas</p>
+                            <p className="text-[10px] text-red-500 mt-1">Hanya akun Super Admin yang diizinkan melihat KTP privat pekerja.</p>
+                          </div>
+                        ) : previewKtpUrl ? (
+                          <div className="relative w-full aspect-square max-w-[200px] rounded-lg overflow-hidden border border-slate-200">
+                            <Image src={previewKtpUrl} alt="KTP" fill className="object-contain" unoptimized />
+                          </div>
+                        ) : (
+                          <div className="w-full aspect-square max-w-[200px] bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs">
+                            Tidak ada foto
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action buttons inside modal */}
+              <div className="flex justify-end gap-4 pt-4 border-t border-slate-100">
+                {previewWorker.status === 'pending_approval' && (
+                  <>
+                    <button
+                      onClick={() => handleApprove(previewWorker)}
+                      className="px-6 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-semibold transition"
+                    >
+                      Setujui (Approve)
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedWorker(previewWorker)
+                        setIsRejecting(true)
+                      }}
+                      className="px-6 py-2 bg-red-650 hover:bg-red-700 text-white rounded-xl text-sm font-semibold transition"
+                    >
+                      Tolak
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setPreviewWorker(null)}
+                  className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition"
+                >
+                  Tutup
                 </button>
               </div>
             </div>

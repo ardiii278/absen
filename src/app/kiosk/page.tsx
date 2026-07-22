@@ -200,18 +200,17 @@ export default function KioskPage() {
     await updateQueueStats()
   }, [updateQueueStats])
 
+  const hasCooldown = useCallback((workerName: string, type: 'in' | 'out') => {
+    const oneHourAgo = new Date(Date.now() - 3600000)
+    const recentLog = logs.find(
+      (l) => l.name === workerName && l.type === type && new Date(l.occurred_at) > oneHourAgo
+    )
+    return recentLog
+  }, [logs])
+
   const triggerFaceMatch = useCallback(async () => {
     if (!videoRef.current || !scanMode || !projectId) return
     setErrorMsg(null)
-
-    // Cooldown check helper (1 hour per worker/type)
-    const hasCooldown = (workerId: string, type: 'in' | 'out') => {
-      const oneHourAgo = new Date(Date.now() - 3600000)
-      const recentLog = logs.find(
-        (l) => l.type === type && new Date(l.occurred_at) > oneHourAgo
-      )
-      return !!recentLog
-    }
 
     try {
       // Simulate descriptor scan
@@ -228,8 +227,10 @@ export default function KioskPage() {
       if (!matchedWorker) return
 
       // Cooldown Check
-      if (hasCooldown(matchedWorker.id, scanMode)) {
-        setErrorMsg(`Sudah melakukan absensi ${scanMode === 'in' ? 'Masuk' : 'Pulang'} dalam 1 jam terakhir.`)
+      const recent = hasCooldown(matchedWorker.name, scanMode)
+      if (recent) {
+        const timeFormatted = new Date(recent.occurred_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        setErrorMsg(`Sudah Absen ${scanMode === 'in' ? 'Masuk' : 'Pulang'} pada jam ${timeFormatted}.`)
         stopScan()
         return
       }
@@ -260,7 +261,7 @@ export default function KioskPage() {
       const msg = err instanceof Error ? err.message : 'Pencocokan gagal'
       setErrorMsg(msg)
     }
-  }, [scanMode, projectId, logs, workers, gpsCoords, stopScan, submitOrQueue, fetchWorkersAndLogs])
+  }, [scanMode, projectId, hasCooldown, workers, gpsCoords, stopScan, submitOrQueue, fetchWorkersAndLogs])
 
   const handleManualFallback = useCallback(async () => {
     if (!selectedWorkerId || !scanMode || !videoRef.current || !projectId) return
@@ -269,6 +270,17 @@ export default function KioskPage() {
     try {
       const selectedWorker = workers.find((w) => w.id === selectedWorkerId)
       if (!selectedWorker) return
+
+      // Cooldown Check
+      const recent = hasCooldown(selectedWorker.name, scanMode)
+      if (recent) {
+        const timeFormatted = new Date(recent.occurred_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        setErrorMsg(`Sudah Absen ${scanMode === 'in' ? 'Masuk' : 'Pulang'} pada jam ${timeFormatted}.`)
+        stopScan()
+        setShowManualSelection(false)
+        setSelectedWorkerId('')
+        return
+      }
 
       const evidenceBlob = await watermark(videoRef.current, { time: new Date(), gps: gpsCoords })
       if (!evidenceBlob) {
@@ -296,7 +308,7 @@ export default function KioskPage() {
       const msg = err instanceof Error ? err.message : 'Gagal memproses fallback manual'
       setErrorMsg(msg)
     }
-  }, [selectedWorkerId, scanMode, projectId, workers, gpsCoords, submitOrQueue, stopScan, fetchWorkersAndLogs])
+  }, [selectedWorkerId, scanMode, projectId, workers, gpsCoords, submitOrQueue, stopScan, fetchWorkersAndLogs, hasCooldown])
 
   const getGpsLocation = useCallback((): Promise<{ latitude: number; longitude: number }> => {
     return new Promise((resolve) => {
@@ -344,9 +356,20 @@ export default function KioskPage() {
     }
 
     // Schedule async to prevent synchronous setState in render
-    const t = setTimeout(() => {
+    const t = setTimeout(async () => {
       setProjectId(pId)
       setIsOnline(navigator.onLine)
+      
+      // Recover stuck syncing items
+      try {
+        const stuck = await db.queue.where('status').equals('syncing').toArray()
+        if (stuck.length > 0) {
+          const stuckIds = stuck.map(item => item.id).filter((id): id is number => id !== undefined)
+          await db.queue.where('id').anyOf(stuckIds).modify({ status: 'failed' })
+        }
+      } catch (err) {
+        console.error('Failed to recover stuck syncing items:', err)
+      }
     }, 0)
 
     // Heartbeat setup
@@ -359,7 +382,15 @@ export default function KioskPage() {
       }
     }, 30000)
 
-    const handleOnline = () => setIsOnline(true)
+    const handleOnline = () => {
+      setIsOnline(true)
+      import('@/lib/offline/sync').then(({ startBackgroundSync }) => {
+        startBackgroundSync().then(() => {
+          updateQueueStats()
+          fetchWorkersAndLogs()
+        })
+      })
+    }
     const handleOffline = () => setIsOnline(false)
 
     window.addEventListener('online', handleOnline)
@@ -371,7 +402,7 @@ export default function KioskPage() {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [router])
+  }, [router, updateQueueStats, fetchWorkersAndLogs])
 
   useEffect(() => {
     if (projectId) {
@@ -379,6 +410,16 @@ export default function KioskPage() {
         fetchProjectDetails()
         fetchWorkersAndLogs()
         updateQueueStats()
+        
+        // Auto-sync leftover queue on load if online
+        if (navigator.onLine) {
+          import('@/lib/offline/sync').then(({ startBackgroundSync }) => {
+            startBackgroundSync().then(() => {
+              updateQueueStats()
+              fetchWorkersAndLogs()
+            })
+          })
+        }
       }, 0)
       return () => clearTimeout(t)
     }

@@ -149,7 +149,10 @@ export default function PayrollPage() {
 
       setPayrollData(payrollList)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Gagal memuat data payroll'
+      let msg = 'Gagal memuat data payroll'
+      if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+        msg = err.message
+      }
       setErrorMsg(msg)
     } finally {
       setLoading(false)

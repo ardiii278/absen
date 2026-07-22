@@ -115,6 +115,12 @@ export async function POST(req: NextRequest) {
         if (duplicateCheck) {
           dbStatus = 'pending_approval'
           conflictOfId = duplicateCheck.id
+
+          // Mark the original record as pending_approval too
+          await client
+            .from('attendance')
+            .update({ status: 'pending_approval' })
+            .eq('id', duplicateCheck.id)
         }
 
         // G. Insert database record

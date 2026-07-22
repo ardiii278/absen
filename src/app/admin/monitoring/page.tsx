@@ -96,7 +96,13 @@ export default function MonitoringDashboard() {
         unresolvedConflicts: unresolvedConf || 0
       })
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Gagal memuat data monitoring'
+      console.error(err)
+      let msg = 'Gagal memuat data monitoring'
+      if (err && typeof err === 'object') {
+        if ('message' in err && typeof err.message === 'string') {
+          msg = err.message
+        }
+      }
       setErrorMsg(msg)
     } finally {
       setLoading(false)

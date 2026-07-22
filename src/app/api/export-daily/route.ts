@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { projectId, startDate, endDate } = parsed.data
+    const jobScope = body.jobScope || null
 
     if (authContext.profile.role !== 'super_admin' && authContext.profile.role !== 'admin') {
       return NextResponse.json({ error: 'Hanya Admin atau Super Admin yang diizinkan' }, { status: 403 })
@@ -62,12 +63,30 @@ export async function POST(req: NextRequest) {
 
     const offsetHours = await getProjectTimezoneOffset(client, projectId)
 
+    // Fetch workers list first to filter by job scope
+    let workerQuery = client
+      .from('workers')
+      .select('id')
+      .eq('project_id', projectId)
+
+    if (jobScope) {
+      workerQuery = workerQuery.eq('job_scope', jobScope)
+    }
+
+    const { data: workersList } = await workerQuery
+    const workerIds = (workersList || []).map((w: { id: string }) => w.id)
+
+    if (workerIds.length === 0) {
+      return NextResponse.json({ error: 'Tidak ada data pekerja untuk kriteria ini' }, { status: 404 })
+    }
+
     // Fetch all attendance records
     const { data: rawAttendance, error: attErr } = await client
       .from('attendance')
       .select('id, worker_id, type, occurred_at, evidence_path, source, status, workers(name, nik)')
       .eq('project_id', projectId)
       .eq('status', 'approved')
+      .in('worker_id', workerIds)
       .gte('occurred_at', `${startDate}T00:00:00Z`)
       .lte('occurred_at', `${endDate}T23:59:59.999Z`)
       .order('occurred_at', { ascending: true })
@@ -99,7 +118,7 @@ export async function POST(req: NextRequest) {
     // Header
     worksheet.mergeCells('A1:F1')
     const titleCell = worksheet.getCell('A1')
-    titleCell.value = `REKAP ABSENSI HARIAN - ${projectName.toUpperCase()}`
+    titleCell.value = `REKAP ABSENSI HARIAN - ${projectName.toUpperCase()}${jobScope ? ` (JOB SCOPE: ${jobScope.toUpperCase()})` : ''}`
     titleCell.font = { size: 13, bold: true }
     titleCell.alignment = { horizontal: 'center' }
 
