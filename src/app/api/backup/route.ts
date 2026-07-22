@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
     // 7. Fetch approved overtime records for this project and date range
     const { data: overtimes, error: otErr } = await client
       .from('overtime')
-      .select('id')
+      .select('id, work_date')
       .eq('project_id', projectId)
       .eq('status', 'approved')
       .gte('work_date', startDate)
