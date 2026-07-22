@@ -45,12 +45,12 @@ export const gpsSchema = z.object({
 })
 
 export const syncEventSchema = z.object({
-  client_event_id: z.string().uuid(),
+  client_event_id: z.string(),
   evidenceBase64: base64ImageSchema,
   payload: z.object({
-    client_event_id: z.string().uuid(),
-    worker_id: z.string().uuid(),
-    project_id: z.string().uuid(),
+    client_event_id: z.string(),
+    worker_id: z.string(),
+    project_id: z.string(),
     type: z.enum(['in', 'out']),
     occurred_at: z.string().refine((val) => !isNaN(Date.parse(val)), {
       message: 'Tanggal occurred_at tidak valid'
@@ -69,7 +69,7 @@ export const syncRequestSchema = z.object({
 })
 
 export const exportRequestSchema = z.object({
-  projectId: z.string().uuid(),
+  projectId: z.string(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
     message: 'Format tanggal harus YYYY-MM-DD'
   }),
@@ -95,7 +95,7 @@ export const exportRequestSchema = z.object({
 })
 
 export const signedKtpRequestSchema = z.object({
-  workerId: z.string().uuid()
+  workerId: z.string()
 })
 
 export const loginRequestSchema = z.object({
