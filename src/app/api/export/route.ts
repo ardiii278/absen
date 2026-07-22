@@ -438,7 +438,12 @@ export async function POST(req: NextRequest) {
         'Content-Disposition': `attachment; filename=rekap_absen_${projectId}.xlsx`
       }
     })
-  } catch {
-    return NextResponse.json({ error: 'Terjadi kesalahan sistem saat mengekspor Excel' }, { status: 500 })
+  } catch (err: unknown) {
+    console.error('Export error:', err)
+    let msg = 'Terjadi kesalahan sistem saat mengekspor Excel'
+    if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+      msg = err.message
+    }
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
