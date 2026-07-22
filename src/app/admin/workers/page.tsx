@@ -45,6 +45,16 @@ export default function WorkerApprovalPage() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
 
+  // Create Worker state
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createName, setCreateName] = useState('')
+  const [createNik, setCreateNik] = useState('')
+  const [createPosition, setCreatePosition] = useState<'TK' | 'KN'>('TK')
+  const [createJobScope, setCreateJobScope] = useState('')
+  const [createDailyWage, setCreateDailyWage] = useState(150000)
+  const [createProjectId, setCreateProjectId] = useState('')
+  const [createLoading, setCreateLoading] = useState(false)
+
   // Edit Worker state
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null)
@@ -56,6 +66,11 @@ export default function WorkerApprovalPage() {
   const [editProjectId, setEditProjectId] = useState('')
   const [editIsActive, setEditIsActive] = useState(true)
   const [editLoading, setEditLoading] = useState(false)
+
+  // Delete Worker state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deletingWorker, setDeletingWorker] = useState<Worker | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   const fetchWorkers = useCallback(async () => {
     setLoading(true)
@@ -115,6 +130,89 @@ export default function WorkerApprovalPage() {
     }, 0)
     return () => clearTimeout(t)
   }, [fetchWorkers, fetchProjects, fetchUserRole])
+
+  const handleCreateWorker = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!createName || !createNik || !createProjectId) {
+      setErrorMsg('Nama, NIK, dan Proyek wajib diisi')
+      return
+    }
+
+    if (!/^[0-9]{16}$/.test(createNik)) {
+      setErrorMsg('NIK harus tepat 16 digit angka')
+      return
+    }
+
+    setCreateLoading(true)
+    setErrorMsg(null)
+    setSuccessMsg(null)
+
+    try {
+      // Check if NIK already exists
+      const { data: existingWorker } = await supabase
+        .from('workers')
+        .select('id')
+        .eq('nik', createNik)
+        .maybeSingle()
+
+      if (existingWorker) {
+        throw new Error('Pekerja dengan NIK ini sudah terdaftar')
+      }
+
+      // Generate mock face descriptor for direct admin creation
+      const dummyDescriptor = Array.from({ length: 128 }, () => Math.random())
+
+      const payload = {
+        name: createName,
+        nik: createNik,
+        position: createPosition,
+        job_scope: createJobScope,
+        daily_wage: createDailyWage,
+        project_id: createProjectId,
+        status: 'approved' as const,
+        is_active: true,
+        face_descriptor: dummyDescriptor,
+        profile_path: 'temp/placeholder_profile.jpg' // Placeholder profile path
+      }
+
+      const { data: newWorker, error } = await supabase
+        .from('workers')
+        .insert(payload)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Log to Audit Trail
+      const userRes = await supabase.auth.getUser()
+      await supabase.from('audit_logs').insert({
+        actor_id: userRes.data.user?.id || null,
+        entity_type: 'workers',
+        entity_id: newWorker.id,
+        action: 'CREATED_WORKER_DIRECT',
+        reason: 'Pekerja harian ditambahkan langsung oleh admin',
+        new_data: payload
+      })
+
+      setSuccessMsg(`Pekerja ${createName} berhasil ditambahkan!`)
+      setShowCreateModal(false)
+      // Reset form
+      setCreateName('')
+      setCreateNik('')
+      setCreateJobScope('')
+      setCreateDailyWage(150000)
+      setCreateProjectId('')
+      await fetchWorkers()
+    } catch (err: unknown) {
+      let msg = 'Gagal menambahkan pekerja'
+      if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+        msg = err.message
+      }
+      setErrorMsg(msg)
+    } finally {
+      setCreateLoading(false)
+    }
+  }
 
   const handleApprove = async (worker: Worker) => {
     setErrorMsg(null)
@@ -220,7 +318,7 @@ export default function WorkerApprovalPage() {
 
     try {
       // 1. Generate signed URL for profile photo
-      if (worker.profile_path) {
+      if (worker.profile_path && worker.profile_path !== 'temp/placeholder_profile.jpg') {
         const { data: profData } = await supabase.storage
           .from('kiosk-photos')
           .createSignedUrl(worker.profile_path, 60)
@@ -333,6 +431,46 @@ export default function WorkerApprovalPage() {
     }
   }
 
+  const handleDeleteWorker = async () => {
+    if (!deletingWorker) return
+    setDeleteLoading(true)
+    setErrorMsg(null)
+    setSuccessMsg(null)
+
+    try {
+      const { error } = await supabase
+        .from('workers')
+        .delete()
+        .eq('id', deletingWorker.id)
+
+      if (error) throw error
+
+      // Log to Audit Trail
+      const userRes = await supabase.auth.getUser()
+      await supabase.from('audit_logs').insert({
+        actor_id: userRes.data.user?.id || null,
+        entity_type: 'workers',
+        entity_id: deletingWorker.id,
+        action: 'DELETED_WORKER',
+        reason: 'Pekerja harian dihapus secara permanen oleh admin',
+        old_data: { name: deletingWorker.name, nik: deletingWorker.nik }
+      })
+
+      setSuccessMsg(`Pekerja ${deletingWorker.name} berhasil dihapus!`)
+      setShowDeleteConfirm(false)
+      setDeletingWorker(null)
+      await fetchWorkers()
+    } catch (err: unknown) {
+      let msg = 'Gagal menghapus pekerja'
+      if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+        msg = err.message
+      }
+      setErrorMsg(msg)
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
   const handleBulkTransfer = async () => {
     if (selectedWorkerIds.length === 0 || !targetProject) return
     setErrorMsg(null)
@@ -412,7 +550,20 @@ export default function WorkerApprovalPage() {
   return (
     <div className="min-h-screen bg-slate-50 p-8 text-slate-800">
       <div className="max-w-6xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
-        <h1 className="text-2xl font-bold mb-6 text-slate-800">Approval dan Kelola Pekerja</h1>
+        
+        {/* Header */}
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Approval dan Kelola Pekerja</h1>
+            <p className="text-sm text-slate-500 mt-1">Review pendaftaran pekerja baru, edit profil, transfer lokasi, atau hapus pekerja</p>
+          </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-semibold transition"
+          >
+            + Tambah Pekerja
+          </button>
+        </div>
 
         {errorMsg && (
           <div className="mb-6 p-4 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100 flex justify-between items-center">
@@ -545,6 +696,12 @@ export default function WorkerApprovalPage() {
                         >
                           Edit
                         </button>
+                        <button
+                          onClick={() => { setDeletingWorker(worker); setShowDeleteConfirm(true) }}
+                          className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded text-xs font-semibold transition"
+                        >
+                          Hapus
+                        </button>
                         {worker.status === 'pending_approval' && (
                           <>
                             <button
@@ -573,36 +730,99 @@ export default function WorkerApprovalPage() {
           </table>
         </div>
 
-        {/* Reject Dialog overlay */}
-        {isRejecting && (
+        {/* CREATE WORKER MODAL */}
+        {showCreateModal && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl p-6 max-w-md w-full">
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Tolak Pendaftaran Pekerja</h3>
-              <textarea
-                className="w-full p-3 border border-slate-200 rounded-lg text-slate-850 focus:outline-none focus:ring-2 focus:ring-red-600 mb-4"
-                placeholder="Alasan penolakan pendaftaran..."
-                rows={4}
-                value={rejectReason}
-                onChange={e => setRejectReason(e.target.value)}
-              />
-              <div className="flex gap-4">
-                <button
-                  onClick={handleReject}
-                  className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition"
-                >
-                  Tolak Pendaftaran
-                </button>
-                <button
-                  onClick={() => {
-                    setIsRejecting(false)
-                    setSelectedWorker(null)
-                    setRejectReason('')
-                  }}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
-                >
-                  Batal
-                </button>
-              </div>
+              <h3 className="text-lg font-bold text-slate-800 mb-4">Tambah Pekerja Harian Baru</h3>
+              <form onSubmit={handleCreateWorker} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap</label>
+                  <input
+                    type="text"
+                    placeholder="Nama sesuai KTP"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none text-slate-900 font-semibold"
+                    value={createName}
+                    onChange={e => setCreateName(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">NIK (16 Digit)</label>
+                  <input
+                    type="text"
+                    maxLength={16}
+                    placeholder="1234567890123456"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none font-mono"
+                    value={createNik}
+                    onChange={e => setCreateNik(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Jabatan</label>
+                  <select
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
+                    value={createPosition}
+                    onChange={e => setCreatePosition(e.target.value as 'TK' | 'KN')}
+                  >
+                    <option value="TK">Tenaga Kerja (TK)</option>
+                    <option value="KN">Kepala Regu (KN)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Job Scope</label>
+                  <input
+                    type="text"
+                    placeholder="misal: Struktur, finishing"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none text-slate-800"
+                    value={createJobScope}
+                    onChange={e => setCreateJobScope(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Upah Harian (Rp)</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none font-mono"
+                    value={createDailyWage}
+                    onChange={e => setCreateDailyWage(Number(e.target.value))}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Lokasi Proyek</label>
+                  <select
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
+                    value={createProjectId}
+                    onChange={e => setCreateProjectId(e.target.value)}
+                  >
+                    <option value="">Pilih Proyek...</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex gap-4 pt-4 border-t border-slate-100">
+                  <button
+                    type="submit"
+                    disabled={createLoading}
+                    className="flex-1 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-medium transition disabled:opacity-50"
+                  >
+                    {createLoading ? 'Menyimpan...' : 'Tambah'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
@@ -708,6 +928,68 @@ export default function WorkerApprovalPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* DELETE CONFIRMATION MODAL */}
+        {showDeleteConfirm && deletingWorker && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+              <h3 className="text-lg font-bold text-red-800 mb-2">Hapus Pekerja Harian</h3>
+              <p className="text-sm text-slate-600 mb-4">
+                Anda yakin ingin menghapus pekerja <strong>{deletingWorker.name}</strong> secara permanen?
+                Tindakan ini tidak dapat dibatalkan dan akan membersihkan data hubungan kerja pekerja ini.
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={handleDeleteWorker}
+                  disabled={deleteLoading}
+                  className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition disabled:opacity-50"
+                >
+                  {deleteLoading ? 'Menghapus...' : 'Ya, Hapus'}
+                </button>
+                <button
+                  onClick={() => { setShowDeleteConfirm(false); setDeletingWorker(null) }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
+                >
+                  Batal
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reject Dialog overlay */}
+        {isRejecting && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+              <h3 className="text-lg font-bold text-slate-800 mb-4">Tolak Pendaftaran Pekerja</h3>
+              <textarea
+                className="w-full p-3 border border-slate-200 rounded-lg text-slate-850 focus:outline-none focus:ring-2 focus:ring-red-600 mb-4"
+                placeholder="Alasan penolakan pendaftaran..."
+                rows={4}
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+              />
+              <div className="flex gap-4">
+                <button
+                  onClick={handleReject}
+                  className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition"
+                >
+                  Tolak Pendaftaran
+                </button>
+                <button
+                  onClick={() => {
+                    setIsRejecting(false)
+                    setSelectedWorker(null)
+                    setRejectReason('')
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
+                >
+                  Batal
+                </button>
+              </div>
             </div>
           </div>
         )}
