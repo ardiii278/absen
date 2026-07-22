@@ -144,6 +144,34 @@ begin
 end;
 $$;
 
+-- Role checking helper functions to prevent RLS infinite recursion
+create or replace function is_super_admin(p_user_id uuid)
+returns boolean security definer language plpgsql as $$
+begin
+  return exists (
+    select 1 from profiles where id = p_user_id and role = 'super_admin'
+  );
+end;
+$$;
+
+create or replace function is_admin_or_super_admin(p_user_id uuid)
+returns boolean security definer language plpgsql as $$
+begin
+  return exists (
+    select 1 from profiles where id = p_user_id and role in ('admin', 'super_admin')
+  );
+end;
+$$;
+
+create or replace function is_kiosk(p_user_id uuid)
+returns boolean security definer language plpgsql as $$
+begin
+  return exists (
+    select 1 from profiles where id = p_user_id and role = 'kiosk'
+  );
+end;
+$$;
+
 -- Enable Row Level Security (RLS) on all tables
 alter table projects enable row level security;
 alter table profiles enable row level security;
@@ -160,31 +188,27 @@ create policy "Users can view projects they can access" on projects
   for select using (can_access_project(id));
 
 create policy "Super admins can manage projects" on projects
-  for all using (
-    exists (select 1 from profiles where id = auth.uid() and role = 'super_admin')
-  );
+  for all using (is_super_admin(auth.uid()));
 
 -- Policies for profiles
-create policy "Users can view their own profile" on profiles
-  for select using (id = auth.uid());
+create policy "Users can view their own profile or super admin read all" on profiles
+  for select using (id = auth.uid() or is_super_admin(auth.uid()));
 
 create policy "Super admins can manage profiles" on profiles
-  for all using (
-    exists (select 1 from profiles where id = auth.uid() and role = 'super_admin')
-  );
+  for all using (is_super_admin(auth.uid()));
 
 -- Policies for admin_projects
 create policy "Admins can view their project bindings" on admin_projects
-  for select using (user_id = auth.uid() or exists (select 1 from profiles where id = auth.uid() and role = 'super_admin'));
+  for select using (user_id = auth.uid() or is_super_admin(auth.uid()));
 
 -- Policies for kiosk_accounts
 create policy "Admins can manage kiosk accounts" on kiosk_accounts
   for all using (
     auth_user_id = auth.uid() or 
-    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+    is_admin_or_super_admin(auth.uid())
   ) with check (
     auth_user_id = auth.uid() or 
-    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+    is_admin_or_super_admin(auth.uid())
   );
 
 -- Policies for workers
@@ -197,7 +221,7 @@ create policy "Insert workers for kiosk/admins" on workers
 create policy "Update/Delete workers restricted to allowed project admin/super_admin" on workers
   for all using (
     can_access_project(project_id) and 
-    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+    is_admin_or_super_admin(auth.uid())
   );
 
 -- Policies for attendance
@@ -208,15 +232,15 @@ create policy "Insert attendance from kiosk/admins" on attendance
   for insert with check (
     can_access_project(project_id) and
     (
-      exists (select 1 from profiles where id = auth.uid() and role = 'kiosk') or
-      exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+      is_kiosk(auth.uid()) or
+      is_admin_or_super_admin(auth.uid())
     )
   );
 
 create policy "Update attendance restricted to admin/super_admin" on attendance
   for update using (
     can_access_project(project_id) and 
-    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+    is_admin_or_super_admin(auth.uid())
   );
 
 -- Policies for overtime
@@ -226,7 +250,7 @@ create policy "Read overtime on allowed projects" on overtime
 create policy "Manage overtime restricted to admin/super_admin" on overtime
   for all using (
     can_access_project(project_id) and
-    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+    is_admin_or_super_admin(auth.uid())
   );
 
 -- Policies for overtime_workers
@@ -243,12 +267,12 @@ create policy "Manage overtime_workers restricted to admin/super_admin" on overt
     exists (
       select 1 from overtime 
       where overtime.id = overtime_workers.overtime_id and can_access_project(overtime.project_id)
-    ) and exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+    ) and is_admin_or_super_admin(auth.uid())
   );
 
 -- Policies for audit_logs
 create policy "Read audit logs for admin/super_admin" on audit_logs
-  for select using (exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin')));
+  for select using (is_admin_or_super_admin(auth.uid()));
 
 create policy "Authenticated users can insert audit logs" on audit_logs
   for insert with check (auth.uid() is not null);
@@ -282,7 +306,7 @@ alter table kiosk_login_history enable row level security;
 
 create policy "Admin/super_admin can read kiosk login history" on kiosk_login_history
   for select using (
-    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+    is_admin_or_super_admin(auth.uid())
   );
 
 create policy "Public can insert kiosk login history" on kiosk_login_history
@@ -309,14 +333,14 @@ create policy "Allow select access to kiosk-photos" on storage.objects
   for select using (
     bucket_id = 'kiosk-photos' and (
       -- Super admin can read everything
-      exists (select 1 from profiles where id = auth.uid() and role = 'super_admin')
+      is_super_admin(auth.uid())
       or
       -- Admin and kiosk can read temp/ and evidence/
       (
         not (name like 'private/%') and
         (
-          exists (select 1 from profiles where id = auth.uid() and role = 'admin') or
-          exists (select 1 from profiles where id = auth.uid() and role = 'kiosk')
+          is_admin_or_super_admin(auth.uid()) or
+          is_kiosk(auth.uid())
         )
       )
     )
@@ -325,5 +349,5 @@ create policy "Allow select access to kiosk-photos" on storage.objects
 create policy "Allow delete access to kiosk-photos" on storage.objects
   for delete using (
     bucket_id = 'kiosk-photos' and
-    exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'super_admin'))
+    is_admin_or_super_admin(auth.uid())
   );
