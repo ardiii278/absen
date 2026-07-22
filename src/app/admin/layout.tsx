@@ -75,6 +75,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       icon: LayoutDashboard
     },
     {
+      name: 'Proyek & Lokasi',
+      path: '/admin/projects',
+      icon: Shield
+    },
+    {
       name: 'Akun Kiosk',
       path: '/admin/kiosk-accounts',
       icon: Smartphone
