@@ -32,7 +32,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) {
-          router.push('/login')
+          router.push('/admin/login')
           return
         }
 
@@ -48,7 +48,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         if (!profile || (profile.role !== 'super_admin' && profile.role !== 'admin')) {
           // If not admin/super_admin, sign out and redirect
           await supabase.auth.signOut()
-          router.push('/login')
+          router.push('/admin/login')
           return
         }
 

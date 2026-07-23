@@ -43,18 +43,21 @@ export type Database = {
           id: string
           role: 'super_admin' | 'admin' | 'kiosk'
           full_name: string | null
+          username: string | null
           created_at: string
         }
         Insert: {
           id: string
           role: 'super_admin' | 'admin' | 'kiosk'
           full_name?: string | null
+          username?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           role?: 'super_admin' | 'admin' | 'kiosk'
           full_name?: string | null
+          username?: string | null
           created_at?: string
         }
       }

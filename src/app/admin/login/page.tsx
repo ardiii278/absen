@@ -21,7 +21,7 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>
 
-export default function LoginPage() {
+export default function AdminLoginPage() {
   const router = useRouter()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -44,7 +44,7 @@ export default function LoginPage() {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'kiosk', username: values.username, password: values.password }),
+        body: JSON.stringify({ mode: 'admin', username: values.username, password: values.password }),
         signal: getAbortSignalTimeout(10000),
       })
       const data = await res.json()
@@ -55,11 +55,10 @@ export default function LoginPage() {
         refresh_token: data.session.refresh_token,
       })
 
-      localStorage.setItem('kiosk_project_id', data.project_id)
-      router.push('/kiosk')
+      router.push('/admin/monitoring')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem'
-      console.error('Login error:', err)
+      console.error('Admin login error:', err)
       setErrorMsg(msg || 'Terjadi kesalahan sistem')
     } finally {
       if (timeoutId) clearTimeout(timeoutId)
@@ -68,9 +67,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
-        <h1 className="text-2xl font-bold text-center text-slate-800 mb-6">Sistem Absensi Kiosk</h1>
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-bold text-slate-800">Admin Login</h1>
+          <p className="text-sm text-slate-500 mt-1">Super Admin / Admin Proyek</p>
+        </div>
 
         {errorMsg && (
           <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100">
@@ -83,7 +85,7 @@ export default function LoginPage() {
             <label className="block text-sm font-semibold text-slate-700 mb-1">Username</label>
             <input
               type="text"
-              placeholder="Masukkan username"
+              placeholder="Masukkan username admin"
               autoComplete="username"
               className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-700 text-slate-800"
               {...register('username')}
@@ -113,8 +115,8 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-xs text-slate-400 mt-6">
-          Admin?{' '}
-          <a href="/admin/login" className="text-emerald-700 hover:underline font-medium">Login Admin</a>
+          User lapangan?{' '}
+          <a href="/login" className="text-emerald-700 hover:underline font-medium">Login Kiosk</a>
         </p>
       </div>
     </div>
