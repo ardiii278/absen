@@ -1,3 +1,5 @@
+'use client'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
@@ -6,7 +8,7 @@ import * as z from 'zod'
 import { supabase } from '@/lib/supabase'
 
 // AbortController for fetch timeout (fallback for older environments)
-const getAbortSignalTimeout = (ms) => {
+const getAbortSignalTimeout = (ms: number): AbortSignal => {
   if (globalThis.AbortSignal && globalThis.AbortSignal.timeout) {
     return globalThis.AbortSignal.timeout(ms);
   }
