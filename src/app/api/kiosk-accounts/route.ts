@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const { data: accounts, error } = await query.order('created_at', { ascending: false })
+    const { data: accounts, error } = await query.order('username', { ascending: true })
 
     if (error) {
       return NextResponse.json({ error: 'Gagal mengambil data akun kiosk' }, { status: 500 })
