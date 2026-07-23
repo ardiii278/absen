@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -14,11 +14,16 @@ const loginSchema = z.object({
   password: z.string().min(6, 'Password minimal 6 karakter'),
 }).refine(data => {
   if (data.type === 'admin') return !!data.email && data.email !== ''
-  if (data.type === 'kiosk') return !!data.username && data.username !== ''
-  return false;
+  return true;
 }, {
-  message: "Email wajib diisi untuk Admin, Username wajib untuk Kiosk",
+  message: "Email wajib diisi untuk Admin",
   path: ["email"]
+}).refine(data => {
+  if (data.type === 'kiosk') return !!data.username && data.username !== ''
+  return true;
+}, {
+  message: "Username wajib diisi untuk Kiosk",
+  path: ["username"]
 })
 
 type LoginFormValues = z.infer<typeof loginSchema>
@@ -29,12 +34,16 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       type: 'admin',
     }
   })
+
+  useEffect(() => {
+    setValue('type', authType)
+  }, [authType, setValue])
 
   const onSubmit = async (values: LoginFormValues) => {
     setErrorMsg(null)
@@ -106,7 +115,7 @@ export default function LoginPage() {
         )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <input type="hidden" value={authType} {...register('type')} />
+          <input type="hidden" {...register('type')} />
 
           {authType === 'admin' ? (
             <div>
