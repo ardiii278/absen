@@ -322,6 +322,27 @@ create index idx_overtime_project_id on overtime(project_id);
 create index idx_workers_project_id on workers(project_id);
 create index idx_workers_nik on workers(nik);
 
+-- Error logs table for centralized system error tracking
+create table error_logs(
+  id uuid primary key default gen_random_uuid(),
+  pathname text not null,
+  method text not null,
+  error_message text not null,
+  stack_trace text,
+  user_id uuid,
+  created_at timestamptz default now()
+);
+
+alter table error_logs enable row level security;
+
+create policy "Admin/super_admin can view error logs" on error_logs
+  for select using (is_admin_or_super_admin(auth.uid()));
+
+create policy "Allow insert error logs to authenticated/public" on error_logs
+  for insert with check (true);
+
+create index idx_error_logs_created_at on error_logs(created_at desc);
+
 -- Private Storage Policies for kiosk-photos bucket
 -- Ensure RLS is enabled on storage.objects if not already
 alter table storage.objects enable row level security;

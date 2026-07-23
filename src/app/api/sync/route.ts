@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, getProjectLocalDayBoundaries } from '@/lib/server-auth'
+import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, getProjectLocalDayBoundaries, logServerError } from '@/lib/server-auth'
+import { supabase } from '@/lib/supabase'
 import { syncRequestSchema } from '@/lib/validators'
 
 export async function POST(req: NextRequest) {
@@ -147,13 +148,17 @@ export async function POST(req: NextRequest) {
         }
 
         results.push({ client_event_id, status: 'success' })
-      } catch {
+      } catch (err: unknown) {
+        console.error('Sync event error:', err)
+        await logServerError(supabase, '/api/sync (event)', 'POST', err)
         results.push({ client_event_id, status: 'failed', error: 'Gagal memproses event' })
       }
     }
 
     return NextResponse.json({ results })
-  } catch {
+  } catch (err: unknown) {
+    console.error('Sync general error:', err)
+    await logServerError(supabase, '/api/sync', 'POST', err)
     return NextResponse.json({ error: 'Terjadi kesalahan sistem' }, { status: 500 })
   }
 }

@@ -108,6 +108,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       name: 'Ekspor & Backup',
       path: '/admin/exports',
       icon: Download
+    },
+    {
+      name: 'Histori Error',
+      path: '/admin/error-logs',
+      icon: Shield
     }
   ]
 

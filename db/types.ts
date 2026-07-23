@@ -308,6 +308,35 @@ export type Database = {
           created_at?: string
         }
       }
+      error_logs: {
+        Row: {
+          id: string
+          pathname: string
+          method: string
+          error_message: string
+          stack_trace: string | null
+          user_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          pathname: string
+          method: string
+          error_message: string
+          stack_trace?: string | null
+          user_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          pathname?: string
+          method?: string
+          error_message?: string
+          stack_trace?: string | null
+          user_id?: string | null
+          created_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never

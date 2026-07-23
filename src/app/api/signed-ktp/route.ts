@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyAuth, createAuditLog } from '@/lib/server-auth'
+import { verifyAuth, createAuditLog, logServerError } from '@/lib/server-auth'
+import { supabase } from '@/lib/supabase'
 import { signedKtpRequestSchema } from '@/lib/validators'
 
 export async function POST(req: NextRequest) {
@@ -61,7 +62,9 @@ export async function POST(req: NextRequest) {
     )
 
     return NextResponse.json({ signedUrl: signedUrlData.signedUrl })
-  } catch {
+  } catch (err: unknown) {
+    console.error('Signed KTP error:', err)
+    await logServerError(supabase, '/api/signed-ktp', 'POST', err)
     return NextResponse.json({ error: 'Terjadi kesalahan sistem' }, { status: 500 })
   }
 }

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
-import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, createAuditLog } from '@/lib/server-auth'
+import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, createAuditLog, logServerError } from '@/lib/server-auth'
+import { supabase } from '@/lib/supabase'
 import { exportRequestSchema } from '@/lib/validators'
 
 // Helper to escape formula injection
@@ -491,7 +492,9 @@ export async function POST(req: NextRequest) {
         'Content-Disposition': `attachment; filename=backup_bukti_${projectId}.zip`
       }
     })
-  } catch {
+  } catch (err: unknown) {
+    console.error('Backup error:', err)
+    await logServerError(supabase, '/api/backup', 'POST', err)
     return NextResponse.json({ error: 'Terjadi kesalahan sistem saat membuat backup ZIP' }, { status: 500 })
   }
 }

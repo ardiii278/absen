@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { loginRequestSchema } from '@/lib/validators'
-import { getClientIp, checkRateLimit, recordLoginAttempt, clearLoginAttempts } from '@/lib/server-auth'
+import { getClientIp, checkRateLimit, recordLoginAttempt, clearLoginAttempts, logServerError } from '@/lib/server-auth'
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req)
@@ -82,7 +82,9 @@ export async function POST(req: NextRequest) {
       project_id: kiosk.project_id,
       role: 'kiosk'
     })
-  } catch {
+  } catch (err: unknown) {
+    console.error('Kiosk login error:', err)
+    await logServerError(supabase, '/api/kiosk-login', 'POST', err)
     // Sanitized generic error message - do not leak internals
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

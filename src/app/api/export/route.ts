@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
-import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, createAuditLog } from '@/lib/server-auth'
+import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, createAuditLog, logServerError } from '@/lib/server-auth'
+import { supabase } from '@/lib/supabase'
 import { exportRequestSchema } from '@/lib/validators'
 
 // Security: Prevent CSV Injection / Formula injection
@@ -440,6 +441,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: unknown) {
     console.error('Export error:', err)
+    await logServerError(supabase, '/api/export', 'POST', err)
     let msg = 'Terjadi kesalahan sistem saat mengekspor Excel'
     if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
       msg = err.message

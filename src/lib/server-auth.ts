@@ -280,3 +280,42 @@ export function getProjectLocalDayBoundaries(
 
   return { localDateStr, startUtcStr, endUtcStr }
 }
+
+export async function logServerError(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client: any,
+  pathname: string,
+  method: string,
+  error: unknown,
+  userId: string | null = null
+): Promise<void> {
+  try {
+    let errorMessage = 'Unknown error'
+    let stackTrace = ''
+
+    if (error instanceof Error) {
+      errorMessage = error.message
+      stackTrace = error.stack || ''
+    } else if (error && typeof error === 'object') {
+      errorMessage = JSON.stringify(error)
+      if ('message' in error && typeof error.message === 'string') {
+        errorMessage = error.message
+      }
+      if ('stack' in error && typeof error.stack === 'string') {
+        stackTrace = error.stack
+      }
+    } else if (typeof error === 'string') {
+      errorMessage = error
+    }
+
+    await client.from('error_logs').insert({
+      pathname,
+      method,
+      error_message: errorMessage,
+      stack_trace: stackTrace,
+      user_id: userId
+    })
+  } catch (err) {
+    console.error('Failed to save server error log:', err)
+  }
+}

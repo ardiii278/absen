@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
-import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, createAuditLog } from '@/lib/server-auth'
+import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, createAuditLog, logServerError } from '@/lib/server-auth'
+import { supabase } from '@/lib/supabase'
 import { exportRequestSchema } from '@/lib/validators'
 
 function escapeFormula(val: string): string {
@@ -224,7 +225,9 @@ export async function POST(req: NextRequest) {
         'Content-Disposition': `attachment; filename=absen_harian_${projectId}_${startDate}_${endDate}.xlsx`
       }
     })
-  } catch {
+  } catch (err: unknown) {
+    console.error('Export daily error:', err)
+    await logServerError(supabase, '/api/export-daily', 'POST', err)
     return NextResponse.json({ error: 'Terjadi kesalahan sistem saat mengekspor' }, { status: 500 })
   }
 }
