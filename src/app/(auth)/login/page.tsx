@@ -114,7 +114,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
           <input type="hidden" {...register('type')} />
 
           {authType === 'admin' ? (
