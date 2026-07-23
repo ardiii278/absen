@@ -30,7 +30,7 @@ interface DashboardWorker {
   projects: { name: string } | null
 }
 
-interface KioskStatus {
+interface UserStatus {
   id: string
   username: string
   is_active: boolean
@@ -50,7 +50,7 @@ export default function MonitoringDashboard() {
     unresolvedConflicts: 0
   })
   const [liveAttendance, setLiveAttendance] = useState<LiveAttendance[]>([])
-  const [kiosks, setKiosks] = useState<KioskStatus[]>([])
+  const [users, setUsers] = useState<UserStatus[]>([])
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [activeWorkers, setActiveWorkers] = useState<DashboardWorker[]>([])
@@ -135,7 +135,7 @@ export default function MonitoringDashboard() {
 
       setLiveAttendance(attendanceList)
       setActiveWorkers(filteredWorkers)
-      setKiosks((kioskData as unknown as KioskStatus[]) || [])
+      setUsers((kioskData as unknown as UserStatus[]) || [])
       setLogs((auditData as AuditLog[]) || [])
     } catch (err) {
       console.error('Failed to fetch monitoring data:', err)
@@ -240,14 +240,14 @@ export default function MonitoringDashboard() {
 
         <div className="space-y-6">
           <div className="card p-6">
-            <h2 className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100 mb-4">Heartbeat Kiosk</h2>
+            <h2 className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100 mb-4">Status Perangkat</h2>
             <div className="space-y-3">
               {loading ? (
                 <p className="text-slate-400 text-xs">Memuat...</p>
-              ) : kiosks.length === 0 ? (
+              ) : users.length === 0 ? (
                 <p className="text-slate-400 text-xs">Tidak ada perangkat.</p>
               ) : (
-                kiosks.map(kiosk => {
+                users.map(kiosk => {
                   const lastSeen = kiosk.last_seen_at ? new Date(kiosk.last_seen_at) : null
                   const isStale = !lastSeen || now - lastSeen.getTime() > 60000
                   return (

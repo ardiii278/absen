@@ -1,4 +1,4 @@
-export interface KioskWorker {
+export interface UserWorker {
   id: string
   name: string
   nik: string
@@ -7,7 +7,7 @@ export interface KioskWorker {
   face_descriptor: number[]
 }
 
-export interface KioskLogEntry {
+export interface UserLogEntry {
   id: string
   worker_id: string
   name: string
@@ -19,7 +19,7 @@ export interface KioskLogEntry {
   synced: boolean
 }
 
-export interface KioskAttendancePair {
+export interface UserAttendancePair {
   worker_id: string
   name: string
   nik: string
@@ -33,7 +33,7 @@ export interface KioskAttendancePair {
 
 export interface ScanResult {
   success: boolean
-  worker?: KioskWorker
+  worker?: UserWorker
   message: string
 }
 

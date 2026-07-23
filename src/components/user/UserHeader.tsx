@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { UserPlus, List, Wifi, WifiOff, Clock, Clock3 } from 'lucide-react'
 
-interface KioskHeaderProps {
+interface UserHeaderProps {
   projectName: string
   isOnline: boolean
   queuedCount: number
@@ -25,7 +25,7 @@ function getWIBTime(date: Date): string {
   })
 }
 
-export default function KioskHeader({ projectName, isOnline, queuedCount, onRegisterClick, onHistoryClick, onOvertimeClick }: KioskHeaderProps) {
+export default function UserHeader({ projectName, isOnline, queuedCount, onRegisterClick, onHistoryClick, onOvertimeClick }: UserHeaderProps) {
   const [timeStr, setTimeStr] = useState('')
 
   useEffect(() => {

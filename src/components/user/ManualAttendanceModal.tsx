@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Search, Camera, X } from 'lucide-react'
-import { KioskWorker, MANUAL_NOTES } from '@/types/kiosk'
+import { UserWorker, MANUAL_NOTES } from '@/types/user'
 import { watermark } from '@/lib/watermark'
 import { playBeepSuccess } from '@/lib/audio'
 import Modal from '@/components/ui/Modal'
@@ -10,10 +10,10 @@ import Modal from '@/components/ui/Modal'
 interface ManualAttendanceModalProps {
   isOpen: boolean
   onClose: () => void
-  workers: KioskWorker[]
+  workers: UserWorker[]
   scanMode: 'in' | 'out'
   gpsCoords: { latitude: number; longitude: number }
-  onSubmit: (worker: KioskWorker, evidenceBlob: Blob, note: string) => void
+  onSubmit: (worker: UserWorker, evidenceBlob: Blob, note: string) => void
   cooldownCheck: (workerId: string, type: 'in' | 'out') => string | null
 }
 
@@ -27,7 +27,7 @@ export default function ManualAttendanceModal({
   cooldownCheck
 }: ManualAttendanceModalProps) {
   const [search, setSearch] = useState('')
-  const [selectedWorker, setSelectedWorker] = useState<KioskWorker | null>(null)
+  const [selectedWorker, setSelectedWorker] = useState<UserWorker | null>(null)
   const [note, setNote] = useState('Normal')
   const [cameraActive, setCameraActive] = useState(false)
   const [photoTaken, setPhotoTaken] = useState(false)
@@ -89,7 +89,7 @@ export default function ManualAttendanceModal({
     playBeepSuccess()
   }
 
-  const handleSelectWorker = (worker: KioskWorker) => {
+  const handleSelectWorker = (worker: UserWorker) => {
     setSelectedWorker(worker)
     setSearch('')
     setCooldownMsg(null)

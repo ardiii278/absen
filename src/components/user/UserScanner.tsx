@@ -6,19 +6,19 @@ import { loadFaceApiModels } from '@/lib/face/api'
 import { createFaceMatcher } from '@/lib/face/matcher'
 import { watermark } from '@/lib/watermark'
 import { playBeepError, playBeepSuccess } from '@/lib/audio'
-import { KioskWorker, ScanResult } from '@/types/kiosk'
+import { UserWorker, ScanResult } from '@/types/user'
 
-interface KioskScannerProps {
-  workers: KioskWorker[]
+interface UserScannerProps {
+  workers: UserWorker[]
   scanMode: 'in' | 'out' | null
   gpsCoords: { latitude: number; longitude: number }
-  onScanComplete: (worker: KioskWorker, evidenceBlob: Blob) => void
+  onScanComplete: (worker: UserWorker, evidenceBlob: Blob) => void
   onCancel: () => void
   onManualFallback: () => void
   cooldownCheck: (workerId: string, type: 'in' | 'out') => string | null
 }
 
-export default function KioskScanner({
+export default function UserScanner({
   workers,
   scanMode,
   gpsCoords,
@@ -26,7 +26,7 @@ export default function KioskScanner({
   onCancel,
   onManualFallback,
   cooldownCheck
-}: KioskScannerProps) {
+}: UserScannerProps) {
   const [timeRemaining, setTimeRemaining] = useState(10)
   const [matchResult, setMatchResult] = useState<ScanResult | null>(null)
   const [showCooldownPopup, setShowCooldownPopup] = useState<string | null>(null)

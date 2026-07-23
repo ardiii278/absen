@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Camera, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { KioskWorker } from '@/types/kiosk'
+import { UserWorker } from '@/types/user'
 
 interface Props {
   isOpen: boolean
@@ -11,7 +11,7 @@ interface Props {
   onSubmitted: (message: string) => void
   projectId: string
   projectName: string
-  workers: KioskWorker[]
+  workers: UserWorker[]
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -23,7 +23,7 @@ function fileToBase64(file: File): Promise<string> {
   })
 }
 
-export default function KioskOvertimeModal({ isOpen, onClose, onSubmitted, projectId, projectName, workers }: Props) {
+export default function UserOvertimeModal({ isOpen, onClose, onSubmitted, projectId, projectName, workers }: Props) {
   const [workDate, setWorkDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }))
   const [hours, setHours] = useState(1.5)
   const [workerIds, setWorkerIds] = useState<string[]>([])
@@ -52,7 +52,7 @@ export default function KioskOvertimeModal({ isOpen, onClose, onSubmitted, proje
     try {
       const { data, error: sessionError } = await supabase.auth.getSession()
       const token = data.session?.access_token
-      if (sessionError || !token) throw new Error('Sesi kiosk tidak valid. Silakan login ulang.')
+      if (sessionError || !token) throw new Error('Sesi tidak valid. Silakan login ulang.')
       const evidenceBase64 = evidence ? await fileToBase64(evidence) : undefined
       const response = await fetch('/api/overtime-request', {
         method: 'POST',

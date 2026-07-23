@@ -128,7 +128,7 @@ export default function AdminLoginPage() {
 
         <p className="text-center text-xs text-slate-400 mt-5">
           User lapangan?{' '}
-          <a href="/login" className="text-emerald-400 hover:text-emerald-300 hover:underline font-semibold">Login Kiosk</a>
+          <a href="/login" className="text-emerald-400 hover:text-emerald-300 hover:underline font-semibold">Login User</a>
         </p>
       </div>
     </div>

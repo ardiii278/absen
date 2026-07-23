@@ -1,9 +1,9 @@
 'use client'
 
-import { KioskAttendancePair } from '@/types/kiosk'
+import { UserAttendancePair } from '@/types/user'
 
 interface TodayAttendanceTableProps {
-  pairs: Array<KioskAttendancePair & { local_date: string }>
+  pairs: Array<UserAttendancePair & { local_date: string }>
   loading: boolean
   period: 'day' | 'week' | 'month'
   onPeriodChange: (period: 'day' | 'week' | 'month') => void

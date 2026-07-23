@@ -57,7 +57,7 @@ export default function LoginPage() {
       })
 
       localStorage.setItem('kiosk_project_id', data.project_id)
-      router.push('/kiosk')
+      router.push('/user')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem'
       console.error('Login error:', err)
@@ -82,7 +82,7 @@ export default function LoginPage() {
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-lg shadow-emerald-600/30">
               <ScanFace className="h-7 w-7 text-white" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Sistem Absensi Kiosk</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Sistem Absensi</h1>
             <p className="text-sm text-slate-500 mt-1">Masuk untuk memulai absensi lapangan</p>
           </div>
 

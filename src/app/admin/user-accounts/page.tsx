@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 
-interface KioskAccount {
+interface UserAccount {
   id: string
   auth_user_id: string
   username: string
@@ -36,8 +36,8 @@ interface AttendanceEntry {
   workers: { name: string; nik: string } | null
 }
 
-export default function KioskAccountsPage() {
-  const [accounts, setAccounts] = useState<KioskAccount[]>([])
+export default function UserAccountsPage() {
+  const [accounts, setAccounts] = useState<UserAccount[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -52,7 +52,7 @@ export default function KioskAccountsPage() {
 
   // Edit form state
   const [showEditModal, setShowEditModal] = useState(false)
-  const [editAccount, setEditAccount] = useState<KioskAccount | null>(null)
+  const [editAccount, setEditAccount] = useState<UserAccount | null>(null)
   const [editProjectId, setEditProjectId] = useState('')
   const [editIsActive, setEditIsActive] = useState(true)
   const [editNewPassword, setEditNewPassword] = useState('')
@@ -60,21 +60,21 @@ export default function KioskAccountsPage() {
 
   // Delete confirmation
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [deleteAccount, setDeleteAccount] = useState<KioskAccount | null>(null)
+  const [deleteAccount, setDeleteAccount] = useState<UserAccount | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
   // Login history modal
   const [showLoginHistory, setShowLoginHistory] = useState(false)
   const [loginHistory, setLoginHistory] = useState<LoginHistoryEntry[]>([])
   const [loginHistoryLoading, setLoginHistoryLoading] = useState(false)
-  const [loginHistoryAccount, setLoginHistoryAccount] = useState<KioskAccount | null>(null)
+  const [loginHistoryAccount, setLoginHistoryAccount] = useState<UserAccount | null>(null)
 
   // Attendance history modal
   const [showAttendanceHistory, setShowAttendanceHistory] = useState(false)
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceEntry[]>([])
   const [attendanceSummary, setAttendanceSummary] = useState({ totalRecords: 0, uniqueWorkers: 0, startDate: '', endDate: '' })
   const [attendanceLoading, setAttendanceLoading] = useState(false)
-  const [attendanceAccount, setAttendanceAccount] = useState<KioskAccount | null>(null)
+  const [attendanceAccount, setAttendanceAccount] = useState<UserAccount | null>(null)
 
   const getToken = async () => {
     const sessionRes = await supabase.auth.getSession()
@@ -90,7 +90,7 @@ export default function KioskAccountsPage() {
         headers: { Authorization: `Bearer ${token}` }
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Gagal memuat akun kiosk')
+      if (!res.ok) throw new Error(data.error || 'Gagal memuat akun user')
       setAccounts(data.accounts || [])
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal memuat data'
@@ -142,7 +142,7 @@ export default function KioskAccountsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Gagal membuat akun')
 
-      setSuccessMsg(`Akun kiosk ${createUsername} berhasil dibuat!`)
+      setSuccessMsg(`Akun user ${createUsername} berhasil dibuat!`)
       setShowCreateModal(false)
       setCreateUsername('')
       setCreatePassword('')
@@ -156,7 +156,7 @@ export default function KioskAccountsPage() {
     }
   }
 
-  const openEditModal = (account: KioskAccount) => {
+  const openEditModal = (account: UserAccount) => {
     setEditAccount(account)
     setEditProjectId(account.project_id)
     setEditIsActive(account.is_active)
@@ -228,7 +228,7 @@ export default function KioskAccountsPage() {
     }
   }
 
-  const viewLoginHistory = async (account: KioskAccount) => {
+  const viewLoginHistory = async (account: UserAccount) => {
     setLoginHistoryAccount(account)
     setShowLoginHistory(true)
     setLoginHistoryLoading(true)
@@ -249,7 +249,7 @@ export default function KioskAccountsPage() {
     }
   }
 
-  const viewAttendanceHistory = async (account: KioskAccount) => {
+  const viewAttendanceHistory = async (account: UserAccount) => {
     setAttendanceAccount(account)
     setShowAttendanceHistory(true)
     setAttendanceLoading(true)
@@ -283,14 +283,14 @@ export default function KioskAccountsPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Kelola Akun Kiosk</h1>
-              <p className="text-sm text-slate-500 mt-1">Tambah, edit, hapus akun kiosk dan pantau aktivitasnya</p>
+              <h1 className="text-2xl font-bold text-slate-900">Kelola Akun User</h1>
+              <p className="text-sm text-slate-500 mt-1">Tambah, edit, hapus akun user dan pantau aktivitasnya</p>
             </div>
             <button
               onClick={() => setShowCreateModal(true)}
               className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-semibold transition"
             >
-              + Tambah Kiosk
+              + Tambah User
             </button>
           </div>
         </div>
@@ -326,7 +326,7 @@ export default function KioskAccountsPage() {
                 {loading ? (
                   <tr><td colSpan={5} className="py-8 text-center text-slate-400">Memuat data...</td></tr>
                 ) : accounts.length === 0 ? (
-                  <tr><td colSpan={5} className="py-8 text-center text-slate-400">Belum ada akun kiosk.</td></tr>
+                  <tr><td colSpan={5} className="py-8 text-center text-slate-400">Belum ada akun user.</td></tr>
                 ) : (
                   accounts.map(account => (
                     <tr key={account.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
@@ -383,13 +383,13 @@ export default function KioskAccountsPage() {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-bold text-slate-800 mb-4">Tambah Akun Kiosk Baru</h3>
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Tambah Akun User Baru</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Username</label>
                 <input
                   type="text"
-                  placeholder="contoh: kiosk_lokasia"
+                  placeholder="contoh: user_lokasia"
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
                   value={createUsername}
                   onChange={e => setCreateUsername(e.target.value)}
@@ -501,7 +501,7 @@ export default function KioskAccountsPage() {
       {showDeleteConfirm && deleteAccount && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-bold text-red-800 mb-2">Hapus Akun Kiosk</h3>
+            <h3 className="text-lg font-bold text-red-800 mb-2">Hapus Akun User</h3>
             <p className="text-sm text-slate-600 mb-4">
               Anda yakin ingin menghapus akun <strong>{deleteAccount.username}</strong>?
               Tindakan ini tidak dapat dibatalkan dan akan menghapus semua data terkait.

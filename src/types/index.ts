@@ -96,7 +96,7 @@ export interface OvertimeWorkerMapping {
   hours: number
 }
 
-export interface KioskAccount {
+export interface UserAccount {
   id: string
   auth_user_id: string
   username: string

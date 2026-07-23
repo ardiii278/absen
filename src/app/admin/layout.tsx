@@ -127,8 +127,8 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
       icon: Download
     },
     {
-      name: 'Pengaturan Akun Kiosk',
-      path: '/admin/kiosk-accounts',
+      name: 'Pengaturan Akun User',
+      path: '/admin/user-accounts',
       icon: Smartphone
     },
     {

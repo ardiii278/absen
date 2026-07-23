@@ -6,16 +6,16 @@ import { LogIn, LogOut } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { db } from '@/lib/offline/db'
 import { startBackgroundSync } from '@/lib/offline/sync'
-import { KioskWorker, KioskLogEntry, KioskAttendancePair } from '@/types/kiosk'
-import KioskHeader from '@/components/kiosk/KioskHeader'
-import KioskScanner from '@/components/kiosk/KioskScanner'
-import ManualAttendanceModal from '@/components/kiosk/ManualAttendanceModal'
-import RegisterWorkerModal from '@/components/kiosk/RegisterWorkerModal'
-import TodayAttendanceTable from '@/components/kiosk/TodayAttendanceTable'
-import KioskOvertimeModal from '@/components/kiosk/KioskOvertimeModal'
+import { UserWorker, UserLogEntry, UserAttendancePair } from '@/types/user'
+import UserHeader from '@/components/user/UserHeader'
+import UserScanner from '@/components/user/UserScanner'
+import ManualAttendanceModal from '@/components/user/ManualAttendanceModal'
+import RegisterWorkerModal from '@/components/user/RegisterWorkerModal'
+import TodayAttendanceTable from '@/components/user/TodayAttendanceTable'
+import UserOvertimeModal from '@/components/user/UserOvertimeModal'
 
 type HistoryPeriod = 'day' | 'week' | 'month'
-type HistoryAttendancePair = KioskAttendancePair & { local_date: string }
+type HistoryAttendancePair = UserAttendancePair & { local_date: string }
 
 interface RawAttendanceLog {
   id: string
@@ -26,12 +26,12 @@ interface RawAttendanceLog {
   workers: { name: string; nik: string; position: 'TK' | 'KN' | null } | null
 }
 
-export default function KioskPage() {
+export default function UserPage() {
   const router = useRouter()
   const [projectId, setProjectId] = useState<string | null>(null)
   const [projectName, setProjectName] = useState('Memuat Proyek...')
-  const [workers, setWorkers] = useState<KioskWorker[]>([])
-  const [logs, setLogs] = useState<KioskLogEntry[]>([])
+  const [workers, setWorkers] = useState<UserWorker[]>([])
+  const [logs, setLogs] = useState<UserLogEntry[]>([])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const [isOnline, setIsOnline] = useState(true)
@@ -102,7 +102,7 @@ export default function KioskPage() {
 
       if (attError) throw attError
       const rawLogs = (attData as unknown as RawAttendanceLog[]) || []
-      const remoteLogs: KioskLogEntry[] = rawLogs.map(att => ({
+      const remoteLogs: UserLogEntry[] = rawLogs.map(att => ({
         id: att.id,
         worker_id: att.worker_id || '',
         name: att.workers?.name || 'Tidak Dikenal',
@@ -115,7 +115,7 @@ export default function KioskPage() {
       }))
 
       const workerById = new Map(rawWorkers.map(worker => [worker.id, worker]))
-      const queuedLogs: KioskLogEntry[] = (await db.queue.toArray())
+      const queuedLogs: UserLogEntry[] = (await db.queue.toArray())
         .filter(item => {
           const occurredAt = new Date(item.payload.occurred_at)
           return item.payload.project_id === projectId
@@ -186,7 +186,7 @@ export default function KioskPage() {
     if (navigator.onLine) {
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) throw new Error('Sesi kiosk tidak tersedia')
+        if (!session?.access_token) throw new Error('Sesi tidak tersedia')
 
         const evidenceBase64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader()
@@ -263,7 +263,7 @@ export default function KioskPage() {
     }
   }, [getGpsLocation])
 
-  const handleScanComplete = useCallback(async (worker: KioskWorker, evidenceBlob: Blob) => {
+  const handleScanComplete = useCallback(async (worker: UserWorker, evidenceBlob: Blob) => {
     if (!scanMode || !projectId) return
     const clientEventId = crypto.randomUUID()
     await submitOrQueue({
@@ -278,7 +278,7 @@ export default function KioskPage() {
     setScanMode(null)
   }, [scanMode, projectId, gpsCoords, submitOrQueue])
 
-  const handleManualSubmit = useCallback(async (worker: KioskWorker, evidenceBlob: Blob, note: string) => {
+  const handleManualSubmit = useCallback(async (worker: UserWorker, evidenceBlob: Blob, note: string) => {
     if (!scanMode || !projectId) return
     const clientEventId = crypto.randomUUID()
     await submitOrQueue({
@@ -418,7 +418,7 @@ export default function KioskPage() {
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-6 text-slate-800">
       <div className="max-w-5xl mx-auto space-y-6">
-        <KioskHeader
+        <UserHeader
           projectName={projectName}
           isOnline={isOnline}
           queuedCount={queuedCount}
@@ -444,7 +444,7 @@ export default function KioskPage() {
         {/* Scanner or Buttons */}
         <div className="card p-6 md:p-8">
           {scanMode ? (
-            <KioskScanner
+            <UserScanner
               workers={workers}
               scanMode={scanMode}
               gpsCoords={gpsCoords}
@@ -506,7 +506,7 @@ export default function KioskPage() {
       {projectId && (
         <>
           <RegisterWorkerModal isOpen={showRegister} onClose={() => setShowRegister(false)} projectId={projectId} />
-          <KioskOvertimeModal isOpen={showOvertime} onClose={() => setShowOvertime(false)} onSubmitted={setStatusMsg} projectId={projectId} projectName={projectName} workers={workers} />
+          <UserOvertimeModal isOpen={showOvertime} onClose={() => setShowOvertime(false)} onSubmitted={setStatusMsg} projectId={projectId} projectName={projectName} workers={workers} />
         </>
       )}
     </div>

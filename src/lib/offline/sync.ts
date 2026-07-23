@@ -25,7 +25,7 @@ export async function startBackgroundSync(): Promise<{ synced: number; failed: n
     }
 
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) throw new Error('Sesi kiosk tidak tersedia')
+    if (!session?.access_token) throw new Error('Sesi tidak tersedia')
 
     const res = await fetch('/api/sync', {
       method: 'POST',
