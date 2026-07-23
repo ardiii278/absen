@@ -9,12 +9,12 @@ import { supabase } from '@/lib/supabase'
 
 const loginSchema = z.object({
   type: z.enum(['admin', 'kiosk']),
-  email: z.string().email('Email tidak valid').optional(),
-  username: z.string().min(3, 'Username minimal 3 karakter').optional(),
+  email: z.string().email('Email tidak valid').optional().or(z.literal('')),
+  username: z.string().min(3, 'Username minimal 3 karakter').optional().or(z.literal('')),
   password: z.string().min(6, 'Password minimal 6 karakter'),
 }).refine(data => {
-  if (data.type === 'admin') return !!data.email
-  if (data.type === 'kiosk') return !!data.username
+  if (data.type === 'admin') return !!data.email && data.email !== ''
+  if (data.type === 'kiosk') return !!data.username && data.username !== ''
   return false;
 }, {
   message: "Email wajib diisi untuk Admin, Username wajib untuk Kiosk",
