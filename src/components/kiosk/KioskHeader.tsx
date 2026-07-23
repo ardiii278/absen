@@ -36,50 +36,51 @@ export default function KioskHeader({ projectName, isOnline, queuedCount, onRegi
   }, [])
 
   return (
-    <header className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950 text-white shadow-lg shadow-slate-900/20 p-5 md:p-6 mb-6">
+      <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-emerald-500/15 blur-3xl" />
+      <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">{projectName}</h1>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <Clock className="w-3.5 h-3.5" />
-              <span className="font-mono">{timeStr} WIB</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isOnline ? (
-                <>
-                  <Wifi className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-xs font-semibold text-emerald-600">Online</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff className="w-3.5 h-3.5 text-amber-600" />
-                  <span className="text-xs font-semibold text-amber-600">Offline Mode</span>
-                </>
-              )}
-              {queuedCount > 0 && (
-                <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                  {queuedCount} antrean
-                </span>
-              )}
-            </div>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight">{projectName}</h1>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
+                isOnline
+                  ? 'bg-emerald-500/15 text-emerald-300 ring-emerald-400/30'
+                  : 'bg-amber-500/15 text-amber-300 ring-amber-400/30'
+              }`}
+            >
+              {isOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+              {isOnline ? 'Online' : 'Offline Mode'}
+            </span>
+            {queuedCount > 0 && (
+              <span className="inline-flex items-center rounded-full bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-400/30 text-[11px] px-2.5 py-1 font-bold">
+                {queuedCount} antrean
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-2 text-sm text-slate-300">
+            <Clock className="w-4 h-4 text-emerald-400" />
+            <span className="font-mono tabular-nums">{timeStr} WIB</span>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button onClick={onOvertimeClick} className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600">
+          <button
+            onClick={onOvertimeClick}
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-amber-400 to-amber-500 px-4 py-2.5 text-sm font-semibold text-amber-950 shadow-sm shadow-amber-900/30 transition hover:from-amber-300 hover:to-amber-400 active:scale-[0.98]"
+          >
             <Clock3 className="h-4 w-4" /> Pengajuan Lembur
           </button>
           <button
             onClick={onRegisterClick}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-semibold transition"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-semibold transition ring-1 ring-inset ring-white/20 active:scale-[0.98]"
           >
             <UserPlus className="w-4 h-4" />
             Tambah Pekerja
           </button>
           <button
             onClick={onHistoryClick}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-semibold transition ring-1 ring-inset ring-white/20 active:scale-[0.98]"
           >
             <List className="w-4 h-4" />
             Riwayat Absensi

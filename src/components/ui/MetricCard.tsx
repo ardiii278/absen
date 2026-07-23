@@ -14,29 +14,24 @@ interface MetricCardProps {
 
 const colorMap = {
   emerald: {
-    bg: 'bg-emerald-50 dark:bg-emerald-900/30',
-    icon: 'text-emerald-600 dark:text-emerald-400',
-    value: 'text-emerald-800 dark:text-emerald-200'
+    chip: 'bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-600/30',
+    accent: 'from-emerald-500/60'
   },
   blue: {
-    bg: 'bg-blue-50 dark:bg-blue-900/30',
-    icon: 'text-blue-600 dark:text-blue-400',
-    value: 'text-blue-800 dark:text-blue-200'
+    chip: 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-600/30',
+    accent: 'from-blue-500/60'
   },
   amber: {
-    bg: 'bg-amber-50 dark:bg-amber-900/30',
-    icon: 'text-amber-600 dark:text-amber-400',
-    value: 'text-amber-800 dark:text-amber-200'
+    chip: 'bg-gradient-to-br from-amber-400 to-amber-500 shadow-amber-500/30',
+    accent: 'from-amber-400/60'
   },
   red: {
-    bg: 'bg-red-50 dark:bg-red-900/30',
-    icon: 'text-red-600 dark:text-red-400',
-    value: 'text-red-800 dark:text-red-200'
+    chip: 'bg-gradient-to-br from-red-500 to-red-600 shadow-red-600/30',
+    accent: 'from-red-500/60'
   },
   slate: {
-    bg: 'bg-slate-50 dark:bg-slate-700/50',
-    icon: 'text-slate-600 dark:text-slate-400',
-    value: 'text-slate-800 dark:text-slate-200'
+    chip: 'bg-gradient-to-br from-slate-500 to-slate-600 shadow-slate-600/30',
+    accent: 'from-slate-400/60'
   }
 }
 
@@ -54,17 +49,22 @@ export default function MetricCard({ label, value, icon: Icon, color = 'emerald'
           onClick()
         }
       }}
-      className={`bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex items-center gap-4 ${onClick ? 'cursor-pointer transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500' : ''}`}
+      className={`card relative overflow-hidden p-5 flex items-center gap-4 ${
+        onClick
+          ? 'cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500'
+          : ''
+      }`}
     >
-      <div className={`p-3 rounded-xl ${colors.bg}`}>
-        <Icon className={`w-6 h-6 ${colors.icon}`} />
+      <span className={`pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${colors.accent} to-transparent`} />
+      <div className={`p-3 rounded-xl text-white shadow-lg ${colors.chip}`}>
+        <Icon className="w-5 h-5" strokeWidth={2.25} />
       </div>
-      <div>
-        <p className="text-slate-400 dark:text-slate-500 text-xs font-semibold uppercase tracking-wider">{label}</p>
+      <div className="min-w-0">
+        <p className="text-slate-400 dark:text-slate-500 text-[11px] font-semibold uppercase tracking-widest truncate">{label}</p>
         {loading ? (
-          <div className="h-8 w-16 bg-slate-100 dark:bg-slate-700 rounded animate-pulse mt-1" />
+          <div className="h-7 w-16 bg-slate-100 dark:bg-slate-700 rounded-lg animate-pulse mt-1.5" />
         ) : (
-          <p className={`text-2xl font-bold ${colors.value} mt-0.5`}>{value}</p>
+          <p className="text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100 mt-0.5 truncate">{value}</p>
         )}
       </div>
     </div>

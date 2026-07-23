@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { LogIn, LogOut } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { db } from '@/lib/offline/db'
 import { startBackgroundSync } from '@/lib/offline/sync'
@@ -415,7 +416,7 @@ export default function KioskPage() {
   })()
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6 text-slate-800">
+    <div className="min-h-screen bg-slate-100 p-4 md:p-6 text-slate-800">
       <div className="max-w-5xl mx-auto space-y-6">
         <KioskHeader
           projectName={projectName}
@@ -427,21 +428,21 @@ export default function KioskPage() {
         />
 
         {errorMsg && (
-          <div className="p-4 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100 flex justify-between items-center">
+          <div className="alert-error animate-fade-up">
             <span>{errorMsg}</span>
-            <button onClick={() => setErrorMsg(null)} className="text-red-500 hover:text-red-700 font-bold">&times;</button>
+            <button onClick={() => setErrorMsg(null)} aria-label="Tutup" className="text-red-400 hover:text-red-600 font-bold text-lg leading-none">&times;</button>
           </div>
         )}
 
         {statusMsg && (
-          <div className="p-4 bg-emerald-50 text-emerald-700 text-sm rounded-lg border border-emerald-100 flex justify-between items-center">
+          <div className="alert-success animate-fade-up">
             <span>{statusMsg}</span>
-            <button onClick={() => setStatusMsg(null)} className="text-emerald-500 hover:text-emerald-700 font-bold">&times;</button>
+            <button onClick={() => setStatusMsg(null)} aria-label="Tutup" className="text-emerald-400 hover:text-emerald-600 font-bold text-lg leading-none">&times;</button>
           </div>
         )}
 
         {/* Scanner or Buttons */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-8">
+        <div className="card p-6 md:p-8">
           {scanMode ? (
             <KioskScanner
               workers={workers}
@@ -453,18 +454,28 @@ export default function KioskPage() {
               cooldownCheck={cooldownCheck}
             />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <button
                 onClick={() => startScan('in')}
-                className="py-14 bg-emerald-700 hover:bg-emerald-800 text-white rounded-2xl font-bold text-2xl shadow-sm transition duration-200 active:scale-[0.98]"
+                className="group relative overflow-hidden py-14 bg-gradient-to-br from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 text-white rounded-2xl shadow-lg shadow-emerald-800/25 transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/40"
               >
-                ABSEN MASUK
+                <span className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-white/10 blur-2xl transition group-hover:bg-white/15" />
+                <span className="relative flex flex-col items-center gap-3">
+                  <LogIn className="h-9 w-9 opacity-90" strokeWidth={2.25} />
+                  <span className="font-bold text-2xl tracking-wide">ABSEN MASUK</span>
+                  <span className="text-xs font-medium text-emerald-100/80">Scan wajah untuk clock-in</span>
+                </span>
               </button>
               <button
                 onClick={() => startScan('out')}
-                className="py-14 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-bold text-2xl shadow-sm transition duration-200 active:scale-[0.98]"
+                className="group relative overflow-hidden py-14 bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 text-white rounded-2xl shadow-lg shadow-red-800/25 transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-500/40"
               >
-                ABSEN PULANG
+                <span className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-white/10 blur-2xl transition group-hover:bg-white/15" />
+                <span className="relative flex flex-col items-center gap-3">
+                  <LogOut className="h-9 w-9 opacity-90" strokeWidth={2.25} />
+                  <span className="font-bold text-2xl tracking-wide">ABSEN PULANG</span>
+                  <span className="text-xs font-medium text-red-100/80">Scan wajah untuk clock-out</span>
+                </span>
               </button>
             </div>
           )}

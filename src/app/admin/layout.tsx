@@ -157,7 +157,8 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-50 dark:bg-slate-900">
+        <div className="h-8 w-8 rounded-full border-2 border-emerald-600 border-t-transparent animate-spin" />
         <div className="text-slate-500 dark:text-slate-400 font-semibold text-sm">Memeriksa Otorisasi...</div>
       </div>
     )
@@ -168,26 +169,29 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
       {mobileMenuOpen && (
         <button
           aria-label="Tutup menu navigasi"
-          className="fixed inset-0 z-30 bg-slate-950/60 md:hidden"
+          className="fixed inset-0 z-30 bg-slate-950/60 backdrop-blur-sm md:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
-      <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 dark:bg-slate-950 text-slate-100 flex flex-col justify-between shrink-0 shadow-xl transition-transform md:static md:translate-x-0`}>
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-8">
-            <Shield className="w-8 h-8 text-emerald-500" />
+      <aside className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 w-[268px] bg-slate-950 text-slate-100 flex flex-col justify-between shrink-0 shadow-2xl transition-transform duration-300 md:static md:translate-x-0 border-r border-slate-800/60`}>
+        <div className="p-5 overflow-y-auto">
+          <div className="flex items-center gap-3 mb-8 px-1 pt-1">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-lg shadow-emerald-900/50">
+              <Shield className="w-5 h-5 text-white" />
+            </div>
             <div>
-              <h2 className="font-bold text-lg leading-tight text-white">Absensi Admin</h2>
-              <span className="text-[10px] text-slate-400 font-medium tracking-wider uppercase">
+              <h2 className="font-bold text-[15px] leading-tight text-white tracking-tight">Absensi Admin</h2>
+              <span className="text-[10px] text-emerald-400/90 font-semibold tracking-widest uppercase">
                 {role === 'super_admin' ? 'Super Admin' : 'Admin Proyek'}
               </span>
             </div>
-            <button aria-label="Tutup menu" onClick={() => setMobileMenuOpen(false)} className="ml-auto text-slate-400 md:hidden">
+            <button aria-label="Tutup menu" onClick={() => setMobileMenuOpen(false)} className="ml-auto p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition md:hidden">
               <X className="h-5 w-5" />
             </button>
           </div>
 
-          <nav className="space-y-1">
+          <p className="px-3 pb-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest">Menu Utama</p>
+          <nav className="space-y-0.5">
             {menuItems.map((item) => {
               const Icon = item.icon
               const itemPath = item.path.split('?')[0]
@@ -197,16 +201,17 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
                   key={item.path + item.name}
                   href={item.path}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
+                  className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-150 ${
                     isActive
-                      ? 'bg-emerald-700 text-white shadow-md'
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                      ? 'bg-emerald-600/15 text-emerald-300'
+                      : 'text-slate-400 hover:bg-slate-800/70 hover:text-slate-100'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span className="flex-1">{item.name}</span>
+                  {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-emerald-500" />}
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-slate-300'}`} />
+                  <span className="flex-1 leading-snug">{item.name}</span>
                   {item.badge !== undefined && (
-                    <span className="w-5 h-5 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <span className="min-w-5 h-5 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-sm shadow-red-900/50">
                       {item.badge > 9 ? '9+' : item.badge}
                     </span>
                   )}
@@ -214,8 +219,8 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
               )
             })}
 
-            <div className="pt-3 mt-3 border-t border-slate-800">
-              <p className="px-4 py-1 text-[10px] uppercase font-bold text-slate-600 tracking-wider">Lainnya</p>
+            <div className="pt-4 mt-2">
+              <p className="px-3 pb-2 text-[10px] uppercase font-bold text-slate-500 tracking-widest">Lainnya</p>
             </div>
 
             {utilityItems.map((item) => {
@@ -226,13 +231,14 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
                   key={item.path + item.name}
                   href={item.path}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
+                  className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-150 ${
                     isActive
-                      ? 'bg-emerald-700 text-white shadow-md'
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                      ? 'bg-emerald-600/15 text-emerald-300'
+                      : 'text-slate-400 hover:bg-slate-800/70 hover:text-slate-100'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-emerald-500" />}
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-slate-300'}`} />
                   <span>{item.name}</span>
                 </Link>
               )
@@ -240,18 +246,21 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
           </nav>
         </div>
 
-        <div className="p-6 border-t border-slate-800">
-          <div className="flex items-center justify-between mb-4">
-            <div className="truncate pr-2">
-              <p className="text-xs text-slate-400 font-medium">Logged in as</p>
-              <p className="text-sm font-bold text-white truncate" title={adminEmail || ''}>
+        <div className="p-4 border-t border-slate-800/70 bg-slate-900/50">
+          <div className="flex items-center gap-3 rounded-xl px-2 py-2 mb-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-800 ring-1 ring-slate-700 text-emerald-400 text-sm font-bold uppercase">
+              {(adminEmail || 'A').charAt(0)}
+            </div>
+            <div className="truncate">
+              <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Masuk sebagai</p>
+              <p className="text-[13px] font-semibold text-slate-200 truncate" title={adminEmail || ''}>
                 {adminEmail}
               </p>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-slate-800 hover:bg-red-900 hover:text-white rounded-xl text-sm font-bold transition text-slate-300"
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-800/80 hover:bg-red-500/15 hover:text-red-300 rounded-xl text-[13px] font-bold transition text-slate-300 ring-1 ring-slate-700/60 hover:ring-red-500/30"
           >
             <LogOut className="w-4 h-4" />
             <span>Keluar</span>
@@ -263,7 +272,7 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
         <button
           aria-label="Buka menu navigasi"
           onClick={() => setMobileMenuOpen(true)}
-          className="fixed bottom-5 right-5 z-20 rounded-full bg-emerald-700 p-4 text-white shadow-lg md:hidden"
+          className="fixed bottom-5 right-5 z-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 p-4 text-white shadow-lg shadow-emerald-900/40 active:scale-95 transition md:hidden"
         >
           <Menu className="h-5 w-5" />
         </button>

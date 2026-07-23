@@ -169,9 +169,9 @@ export default function MonitoringDashboard() {
   }
 
   return (
-    <div className="p-8 space-y-8">
+    <div className="p-5 md:p-8 space-y-6 md:space-y-8 animate-fade-up">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Ringkasan Hari Ini</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">Ringkasan Hari Ini</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Statistik mengikuti pilihan lokasi dan proyek di atas. Klik kartu pekerja atau kehadiran untuk membuka rinciannya.</p>
       </div>
 
@@ -183,21 +183,23 @@ export default function MonitoringDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Absensi Terakhir Masuk/Pulang</h2>
+        <div className="lg:col-span-2 card p-6">
+          <div className="flex items-center gap-2.5 mb-5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/40">
+              <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-slate-100">Absensi Terakhir Masuk/Pulang</h2>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-700 text-slate-400 dark:text-slate-500 text-xs font-semibold">
-                  <th className="py-2 px-3">Pekerja</th>
-                  <th className="py-2 px-3">Tipe</th>
-                  <th className="py-2 px-3">Waktu</th>
-                  <th className="py-2 px-3">Verifikasi</th>
-                  <th className="py-2 px-3">Foto</th>
+                <tr className="border-b border-slate-100 dark:border-slate-700 text-slate-400 dark:text-slate-500 text-[11px] font-semibold uppercase tracking-wider">
+                  <th className="py-2.5 px-3">Pekerja</th>
+                  <th className="py-2.5 px-3">Tipe</th>
+                  <th className="py-2.5 px-3">Waktu</th>
+                  <th className="py-2.5 px-3">Verifikasi</th>
+                  <th className="py-2.5 px-3">Foto</th>
                 </tr>
               </thead>
               <tbody>
@@ -237,8 +239,8 @@ export default function MonitoringDashboard() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6">
-            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-4">Heartbeat Kiosk</h2>
+          <div className="card p-6">
+            <h2 className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100 mb-4">Heartbeat Kiosk</h2>
             <div className="space-y-3">
               {loading ? (
                 <p className="text-slate-400 text-xs">Memuat...</p>
@@ -249,12 +251,15 @@ export default function MonitoringDashboard() {
                   const lastSeen = kiosk.last_seen_at ? new Date(kiosk.last_seen_at) : null
                   const isStale = !lastSeen || now - lastSeen.getTime() > 60000
                   return (
-                    <div key={kiosk.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl">
+                    <div key={kiosk.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/40 rounded-xl ring-1 ring-inset ring-slate-100 dark:ring-slate-700/60">
                       <div>
                         <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">{kiosk.username}</span>
-                        <p className="text-[10px] text-slate-400">{kiosk.projects?.name}</p>
+                        <p className="text-[11px] text-slate-400">{kiosk.projects?.name}</p>
                       </div>
-                      <span className={`w-2.5 h-2.5 rounded-full ${isStale ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                      <span className="relative flex h-2.5 w-2.5">
+                        {!isStale && <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />}
+                        <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${isStale ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                      </span>
                     </div>
                   )
                 })
@@ -262,8 +267,8 @@ export default function MonitoringDashboard() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6">
-            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-4">Audit Log Terbaru</h2>
+          <div className="card p-6">
+            <h2 className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100 mb-4">Audit Log Terbaru</h2>
             <div className="space-y-2 max-h-[200px] overflow-y-auto">
               {loading ? (
                 <p className="text-slate-400 text-xs">Memuat...</p>
@@ -271,8 +276,8 @@ export default function MonitoringDashboard() {
                 <p className="text-slate-400 text-xs">Belum ada log.</p>
               ) : (
                 logs.map(log => (
-                  <div key={log.id} className="p-2 bg-slate-50 dark:bg-slate-700/50 rounded-lg text-[10px]">
-                    <span className="font-bold text-slate-800 dark:text-slate-200 uppercase">{log.action}</span>
+                  <div key={log.id} className="p-2.5 bg-slate-50 dark:bg-slate-700/40 rounded-lg text-[11px] ring-1 ring-inset ring-slate-100 dark:ring-slate-700/60">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wide">{log.action}</span>
                     <span className="text-slate-500 dark:text-slate-400 ml-2">{log.reason || log.entity_type}</span>
                   </div>
                 ))
@@ -283,8 +288,8 @@ export default function MonitoringDashboard() {
       </div>
 
       {detailView && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-800 p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 animate-fade-up">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-800 shadow-2xl border border-slate-200/60 dark:border-slate-700/60 p-6">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
@@ -331,8 +336,8 @@ export default function MonitoringDashboard() {
       )}
 
       {photoUrl && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white p-5">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-up">
+          <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl p-5">
             <div className="mb-3 flex items-center justify-between"><h3 className="font-bold text-slate-800">{photoTitle}</h3><button onClick={() => setPhotoUrl(null)}><X className="h-5 w-5" /></button></div>
             <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black"><Image src={photoUrl} alt="Bukti absensi" fill className="object-contain" unoptimized /></div>
           </div>
