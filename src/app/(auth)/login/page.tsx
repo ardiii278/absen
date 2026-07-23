@@ -1,5 +1,3 @@
-'use client'
-
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
@@ -7,13 +5,14 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { supabase } from '@/lib/supabase'
 
-// AbortController for fetch timeout
-const AbortSignal = globalThis.AbortSignal || class {
-  static timeout(ms) {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), ms);
-    return controller.signal;
+// AbortController for fetch timeout (fallback for older environments)
+const getAbortSignalTimeout = (ms) => {
+  if (globalThis.AbortSignal && globalThis.AbortSignal.timeout) {
+    return globalThis.AbortSignal.timeout(ms);
   }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
 };
 
 const loginSchema = z.object({
@@ -57,6 +56,7 @@ export default function LoginPage() {
   const onSubmit = async (values: LoginFormValues) => {
     setErrorMsg(null)
     setLoading(true)
+    let timeoutId; // To ensure loading is always reset
     try {
       if (values.type === 'admin') {
         const { error } = await supabase.auth.signInWithPassword({
@@ -66,11 +66,19 @@ export default function LoginPage() {
         if (error) throw error
         router.push('/admin/monitoring')
       } else {
+        // Force timeout for safety
+        timeoutId = setTimeout(() => {
+          if (loading) { // Check if still loading
+            setErrorMsg('Permintaan login melebihi batas waktu (timeout).')
+            setLoading(false)
+          }
+        }, 15000); // 15 seconds hard timeout for the whole process
+
         const res = await fetch('/api/kiosk-login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: values.username, password: values.password }),
-          signal: AbortSignal.timeout(10000) // 10 second timeout
+          signal: getAbortSignalTimeout(10000) // 10 second timeout for fetch
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Login gagal')
@@ -86,8 +94,10 @@ export default function LoginPage() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Terjadi kesalahan sistem'
+      console.error('Login error (UI):', err); // Log to console for debugging
       setErrorMsg(msg || 'Terjadi kesalahan sistem')
     } finally {
+      if (timeoutId) clearTimeout(timeoutId); // Clear the force timeout
       setLoading(false)
     }
   }
