@@ -7,6 +7,15 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { supabase } from '@/lib/supabase'
 
+// AbortController for fetch timeout
+const AbortSignal = globalThis.AbortSignal || class {
+  static timeout(ms) {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  }
+};
+
 const loginSchema = z.object({
   type: z.enum(['admin', 'kiosk']),
   email: z.string().email('Email tidak valid').optional().or(z.literal('')),
@@ -61,6 +70,7 @@ export default function LoginPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: values.username, password: values.password }),
+          signal: AbortSignal.timeout(10000) // 10 second timeout
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Login gagal')
