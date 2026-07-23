@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { fetchProjectJobScopes, saveProjectJobScopes } from '@/lib/jobscopes'
 
 interface Project {
   id: string
@@ -32,6 +33,13 @@ export default function ProjectsManagementPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingProject, setDeletingProject] = useState<Project | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Job scope management state
+  const [showScopeModal, setShowScopeModal] = useState(false)
+  const [scopeProject, setScopeProject] = useState<Project | null>(null)
+  const [scopeList, setScopeList] = useState<string[]>([])
+  const [newScope, setNewScope] = useState('')
+  const [scopeLoading, setScopeLoading] = useState(false)
 
   const fetchProjects = useCallback(async () => {
     setLoading(true)
@@ -134,6 +142,64 @@ export default function ProjectsManagementPage() {
     }
   }
 
+  const openScopeModal = async (project: Project) => {
+    setScopeProject(project)
+    setScopeList([])
+    setNewScope('')
+    setShowScopeModal(true)
+    setScopeLoading(true)
+    try {
+      const scopes = await fetchProjectJobScopes(project.id)
+      setScopeList(scopes)
+    } catch {
+      setScopeList([])
+    } finally {
+      setScopeLoading(false)
+    }
+  }
+
+  const persistScopes = async (projectId: string, scopes: string[]) => {
+    await saveProjectJobScopes(projectId, scopes)
+  }
+
+  const handleAddScope = async () => {
+    if (!scopeProject || !newScope.trim()) return
+    const scope = newScope.trim().toUpperCase()
+    if (scopeList.includes(scope)) {
+      setErrorMsg('Sub pekerjaan sudah ada dalam daftar')
+      return
+    }
+    setScopeLoading(true)
+    setErrorMsg(null)
+    try {
+      const updated = [...scopeList, scope].sort()
+      await persistScopes(scopeProject.id, updated)
+      setScopeList(updated)
+      setNewScope('')
+      setSuccessMsg(`Sub pekerjaan "${scope}" ditambahkan ke ${scopeProject.name}`)
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal menambah sub pekerjaan')
+    } finally {
+      setScopeLoading(false)
+    }
+  }
+
+  const handleRemoveScope = async (scope: string) => {
+    if (!scopeProject) return
+    setScopeLoading(true)
+    setErrorMsg(null)
+    try {
+      const updated = scopeList.filter(s => s !== scope)
+      await persistScopes(scopeProject.id, updated)
+      setScopeList(updated)
+      setSuccessMsg(`Sub pekerjaan "${scope}" dihapus dari daftar`)
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal menghapus sub pekerjaan')
+    } finally {
+      setScopeLoading(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!deletingProject) return
     setDeleteLoading(true)
@@ -226,6 +292,12 @@ export default function ProjectsManagementPage() {
                       <td className="py-3 px-4 text-sm">{proj.radius_m !== null ? `${proj.radius_m} meter` : '-'}</td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => openScopeModal(proj)}
+                            className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-xs font-semibold transition"
+                          >
+                            Sub Pekerjaan
+                          </button>
                           <button
                             onClick={() => openEditModal(proj)}
                             className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition"
@@ -332,6 +404,62 @@ export default function ProjectsManagementPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* JOB SCOPE MANAGEMENT MODAL */}
+      {showScopeModal && scopeProject && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-slate-800 mb-1">Sub Pekerjaan / Job Scope</h3>
+            <p className="text-xs text-slate-500 mb-4">Lokasi: <strong>{scopeProject.name}</strong> — Tukang bisa ditandai mengerjakan sub pekerjaan tertentu, misal HARDSCAPE CLUSTER PATRAGRIYA</p>
+
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                placeholder="misal: HARDSCAPE CLUSTER PATRAGRIYA"
+                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none text-slate-800 uppercase"
+                value={newScope}
+                onChange={e => setNewScope(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddScope() } }}
+              />
+              <button
+                onClick={handleAddScope}
+                disabled={scopeLoading || !newScope.trim()}
+                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-sm font-semibold transition disabled:opacity-50"
+              >
+                Tambah
+              </button>
+            </div>
+
+            <div className="space-y-2 mb-4">
+              {scopeLoading && scopeList.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">Memuat...</p>
+              ) : scopeList.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">Belum ada sub pekerjaan. Tambahkan di atas.</p>
+              ) : (
+                scopeList.map(scope => (
+                  <div key={scope} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                    <span className="text-sm font-semibold text-slate-700">{scope}</span>
+                    <button
+                      onClick={() => handleRemoveScope(scope)}
+                      disabled={scopeLoading}
+                      className="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-600 rounded text-xs font-semibold transition disabled:opacity-50"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowScopeModal(false)}
+              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition"
+            >
+              Tutup
+            </button>
           </div>
         </div>
       )}

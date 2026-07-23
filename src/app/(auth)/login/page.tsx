@@ -78,7 +78,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(onSubmit)(e) }} noValidate className="space-y-4">
+        <form method="post" onSubmit={(e) => { e.preventDefault(); handleSubmit(onSubmit)(e) }} noValidate className="space-y-4">
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">Username</label>
             <input

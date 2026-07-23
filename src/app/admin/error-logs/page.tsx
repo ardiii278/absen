@@ -137,7 +137,7 @@ export default function ErrorLogsPage() {
                       </td>
                       <td className="py-3 px-4 text-sm font-bold uppercase">{log.method}</td>
                       <td className="py-3 px-4 text-xs font-mono">{log.pathname}</td>
-                      <td className="py-3 px-4 text-sm text-red-650 max-w-xs truncate" title={log.error_message}>
+                      <td className="py-3 px-4 text-sm text-red-600 max-w-xs truncate" title={log.error_message}>
                         {log.error_message}
                       </td>
                       <td className="py-3 px-4 text-right">
@@ -194,7 +194,7 @@ export default function ErrorLogsPage() {
               </div>
               <div>
                 <span className="text-xs font-bold block text-slate-400">PESAN ERROR</span>
-                <p className="text-sm font-semibold text-red-650 bg-red-50 p-3 rounded-lg border border-red-100">
+                <p className="text-sm font-semibold text-red-600 bg-red-50 p-3 rounded-lg border border-red-100">
                   {selectedLog.error_message}
                 </p>
               </div>

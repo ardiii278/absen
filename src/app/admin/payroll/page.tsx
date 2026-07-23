@@ -2,12 +2,15 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useGlobalFilter } from '@/components/FilterContext'
 
 interface PayrollRow {
   workerId: string
   name: string
   nik: string
   position: string
+  location: string
+  jobScope: string
   dailyWage: number
   workDays: number
   lateDeduction: number
@@ -22,7 +25,9 @@ interface WorkerRawData {
   position: 'TK' | 'KN' | null
   daily_wage: number
   project_id: string
+  job_scope: string
   projects: {
+    name: string
     lng: number | null
   } | null
 }
@@ -43,6 +48,7 @@ interface OvertimeWorkerRawData {
 }
 
 export default function PayrollPage() {
+  const { projectId, jobScope } = useGlobalFilter()
   const [payrollData, setPayrollData] = useState<PayrollRow[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -52,10 +58,14 @@ export default function PayrollPage() {
     setErrorMsg(null)
     try {
       // 1. Fetch Workers with project's longitude
-      const { data: rawWorkers, error: workerErr } = await supabase
+      let workerQuery = supabase
         .from('workers')
-        .select('id, name, nik, position, daily_wage, project_id, projects(lng)')
+        .select('id, name, nik, position, daily_wage, project_id, job_scope, projects(name, lng)')
         .eq('is_active', true)
+      if (projectId) workerQuery = workerQuery.eq('project_id', projectId)
+      if (jobScope) workerQuery = workerQuery.eq('job_scope', jobScope)
+
+      const { data: rawWorkers, error: workerErr } = await workerQuery
 
       if (workerErr) throw workerErr
       if (!rawWorkers) return
@@ -139,6 +149,8 @@ export default function PayrollPage() {
           name: worker.name,
           nik: worker.nik,
           position: worker.position || '',
+          location: worker.projects?.name || '-',
+          jobScope: worker.job_scope || '-',
           dailyWage: Number(worker.daily_wage),
           workDays: creditDays,
           lateDeduction: totalDeduction,
@@ -157,7 +169,7 @@ export default function PayrollPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [jobScope, projectId])
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -167,9 +179,14 @@ export default function PayrollPage() {
   }, [fetchPayroll])
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 text-slate-800">
-      <div className="max-w-6xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
-        <h1 className="text-2xl font-bold mb-6 text-slate-800">Rekap Pengupahan Pekerja</h1>
+    <div className="min-h-screen bg-slate-50 p-4 text-slate-800 sm:p-6 lg:p-8">
+      <div className="max-w-6xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-4 sm:p-6 lg:p-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-800">Rekap Pengupahan Pekerja</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Gunakan pilihan lokasi dan proyek di topbar. Pilih lokasi saja untuk rekap seluruh sub pekerjaan di lokasi tersebut.
+          </p>
+        </div>
 
         {errorMsg && (
           <div className="mb-6 p-4 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100">
@@ -183,6 +200,7 @@ export default function PayrollPage() {
               <tr className="border-b border-slate-100 text-slate-400 text-sm font-semibold">
                 <th className="py-3 px-4">Nama Pekerja</th>
                 <th className="py-3 px-4">NIK</th>
+                <th className="py-3 px-4">Lokasi / Proyek</th>
                 <th className="py-3 px-4">Harian (Rp)</th>
                 <th className="py-3 px-4">Kredit Hari</th>
                 <th className="py-3 px-4">Lembur (Rp)</th>
@@ -193,11 +211,11 @@ export default function PayrollPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400">Memuat data...</td>
+                  <td colSpan={8} className="py-8 text-center text-slate-400">Memuat data...</td>
                 </tr>
               ) : payrollData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400">Tidak ada data payroll aktif.</td>
+                  <td colSpan={8} className="py-8 text-center text-slate-400">Tidak ada data payroll aktif pada filter ini.</td>
                 </tr>
               ) : (
                 payrollData.map(row => (
@@ -207,6 +225,10 @@ export default function PayrollPage() {
                       <div className="text-xs text-slate-400">{row.position}</div>
                     </td>
                     <td className="py-3 px-4 font-mono text-sm">{row.nik}</td>
+                    <td className="py-3 px-4 text-sm">
+                      <div className="font-semibold text-slate-700">{row.location}</div>
+                      <div className="text-xs text-slate-400">{row.jobScope}</div>
+                    </td>
                     <td className="py-3 px-4 font-mono text-sm">
                       Rp {row.dailyWage.toLocaleString('id-ID')}
                     </td>

@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
     const workbook = new ExcelJS.Workbook()
     const worksheet = workbook.addWorksheet('Rekap Kehadiran')
 
-    const totalColumns = 3 + (dateList.length * 2) + 4
+    const totalColumns = 3 + (dateList.length * 2) + 5
     const endHeaderColLetter = getColumnLetter(totalColumns)
 
     // Header styling
@@ -234,7 +234,8 @@ export async function POST(req: NextRequest) {
     const workDaysColLetter = getColumnLetter(nextColIdx)
     const otHoursColLetter = getColumnLetter(nextColIdx + 1)
     const otRateColLetter = getColumnLetter(nextColIdx + 2)
-    const totalWageColLetter = getColumnLetter(nextColIdx + 3)
+    const deductionColLetter = getColumnLetter(nextColIdx + 3)
+    const totalWageColLetter = getColumnLetter(nextColIdx + 4)
 
     worksheet.mergeCells(`${workDaysColLetter}3:${workDaysColLetter}4`)
     const wdHeader = worksheet.getCell(`${workDaysColLetter}3`)
@@ -253,6 +254,12 @@ export async function POST(req: NextRequest) {
     otrHeader.value = 'Tarif Lembur (Rp)'
     otrHeader.font = { bold: true }
     otrHeader.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+
+    worksheet.mergeCells(`${deductionColLetter}3:${deductionColLetter}4`)
+    const deductionHeader = worksheet.getCell(`${deductionColLetter}3`)
+    deductionHeader.value = 'Potongan (Rp)'
+    deductionHeader.font = { bold: true }
+    deductionHeader.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
 
     worksheet.mergeCells(`${totalWageColLetter}3:${totalWageColLetter}4`)
     const twHeader = worksheet.getCell(`${totalWageColLetter}3`)
@@ -274,7 +281,14 @@ export async function POST(req: NextRequest) {
     worksheet.getColumn(nextColIdx).width = 14
     worksheet.getColumn(nextColIdx + 1).width = 14
     worksheet.getColumn(nextColIdx + 2).width = 16
-    worksheet.getColumn(nextColIdx + 3).width = 18
+    worksheet.getColumn(nextColIdx + 3).width = 16
+    worksheet.getColumn(nextColIdx + 4).width = 18
+
+    // Number format with thousand separators (e.g. 150,000)
+    worksheet.getColumn(3).numFmt = '#,##0'
+    worksheet.getColumn(nextColIdx + 2).numFmt = '#,##0'
+    worksheet.getColumn(nextColIdx + 3).numFmt = '#,##0'
+    worksheet.getColumn(nextColIdx + 4).numFmt = '#,##0'
 
     // Row heights for header
     worksheet.getRow(3).height = 20
@@ -360,7 +374,8 @@ export async function POST(req: NextRequest) {
         .filter((ot) => ot.worker_id === worker.id)
         .reduce((sum, current) => sum + Number(current.hours), 0)
 
-      const calculatedWage = (creditDays * dailyWage) + (otHours * (dailyWage / 8))
+      const lateDeduction = workerAtts.reduce((sum, current) => sum + (Number(current.late_deduction) || 0), 0)
+      const calculatedWage = Math.max(0, (creditDays * dailyWage) - lateDeduction + (otHours * (dailyWage / 8)))
       totalWagesSum += calculatedWage
 
       // Write formulas for summaries
@@ -391,9 +406,11 @@ export async function POST(req: NextRequest) {
         result: dailyWage / 8
       }
 
-      // Formula: (Total Hari Kerja * Harian) + (Total Lembur * Tarif Lembur)
+      worksheet.getCell(`${deductionColLetter}${rowNum}`).value = lateDeduction
+
+      // Formula: (Total Hari Kerja * Harian) - Potongan + (Total Lembur * Tarif Lembur)
       worksheet.getCell(`${totalWageColLetter}${rowNum}`).value = {
-        formula: `=(${workDaysColLetter}${rowNum}*C${rowNum})+(${otHoursColLetter}${rowNum}*${otRateColLetter}${rowNum})`,
+        formula: `=MAX(0,(${workDaysColLetter}${rowNum}*C${rowNum})-${deductionColLetter}${rowNum}+(${otHoursColLetter}${rowNum}*${otRateColLetter}${rowNum}))`,
         result: calculatedWage
       }
 

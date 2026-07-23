@@ -3,6 +3,9 @@ import Dexie, { Table } from 'dexie'
 export interface QueuedEvent {
   id?: number
   client_event_id: string
+  worker_id: string
+  worker_name: string
+  type: 'in' | 'out'
   payload: {
     client_event_id: string
     worker_id: string
@@ -15,7 +18,7 @@ export interface QueuedEvent {
   evidence: Blob
   created_at: Date
   attempts: number
-  status: 'queued' | 'syncing' | 'failed'
+  status: 'queued' | 'syncing' | 'failed' | 'sent'
 }
 
 class KioskOfflineDatabase extends Dexie {
@@ -23,8 +26,8 @@ class KioskOfflineDatabase extends Dexie {
 
   constructor() {
     super('KioskOfflineDB')
-    this.version(1).stores({
-      queue: '++id, client_event_id, status, created_at'
+    this.version(2).stores({
+      queue: '++id, client_event_id, worker_id, status, created_at'
     })
   }
 }

@@ -1,8 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import Image from 'next/image'
+import { Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { fetchProjectJobScopes } from '@/lib/jobscopes'
+import { useGlobalFilter } from '@/components/FilterContext'
+import { extractDescriptorFromBlob } from '@/lib/face/api'
 
 interface Worker {
   id: string
@@ -16,6 +20,7 @@ interface Worker {
   project_id: string
   is_active: boolean
   daily_wage: number
+  face_descriptor: number[] | null
 }
 
 interface Project {
@@ -24,6 +29,7 @@ interface Project {
 }
 
 export default function WorkerApprovalPage() {
+  const { projectId: globalProjectId, jobScope: globalJobScope } = useGlobalFilter()
   const [workers, setWorkers] = useState<Worker[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -36,6 +42,7 @@ export default function WorkerApprovalPage() {
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([])
   const [targetProject, setTargetProject] = useState('')
   const [targetJobScope, setTargetJobScope] = useState('')
+  const [bulkScopeOptions, setBulkScopeOptions] = useState<string[]>([])
   const [projects, setProjects] = useState<Project[]>([])
 
   // Detail / Preview modal state
@@ -72,13 +79,24 @@ export default function WorkerApprovalPage() {
   const [deletingWorker, setDeletingWorker] = useState<Worker | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
+  // Search filter
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Job scopes for edit dropdown
+  const [editScopeOptions, setEditScopeOptions] = useState<string[]>([])
+
+  // Photo edit state (super admin)
+  const [photoEditWorker, setPhotoEditWorker] = useState<Worker | null>(null)
+  const [photoEditType, setPhotoEditType] = useState<'profile' | 'ktp' | null>(null)
+  const [photoUploading, setPhotoUploading] = useState(false)
+
   const fetchWorkers = useCallback(async () => {
     setLoading(true)
     setErrorMsg(null)
     try {
       const { data, error } = await supabase
         .from('workers')
-        .select('id, nik, name, position, job_scope, status, profile_path, ktp_private_path, project_id, is_active, daily_wage')
+        .select('id, nik, name, position, job_scope, status, profile_path, ktp_private_path, project_id, is_active, daily_wage, face_descriptor')
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -159,9 +177,6 @@ export default function WorkerApprovalPage() {
         throw new Error('Pekerja dengan NIK ini sudah terdaftar')
       }
 
-      // Generate mock face descriptor for direct admin creation
-      const dummyDescriptor = Array.from({ length: 128 }, () => Math.random())
-
       const payload = {
         name: createName,
         nik: createNik,
@@ -171,7 +186,7 @@ export default function WorkerApprovalPage() {
         project_id: createProjectId,
         status: 'approved' as const,
         is_active: true,
-        face_descriptor: dummyDescriptor,
+        face_descriptor: null,
         profile_path: 'temp/placeholder_profile.jpg' // Placeholder profile path
       }
 
@@ -218,10 +233,21 @@ export default function WorkerApprovalPage() {
     setErrorMsg(null)
     setSuccessMsg(null)
     try {
-      // Mock Descriptor Generation for Demo
-      const dummyDescriptor = Array.from({ length: 128 }, () => Math.random())
-
       let ktpPrivatePath = worker.ktp_private_path
+      let faceDescriptor = worker.face_descriptor
+
+      if (!faceDescriptor || faceDescriptor.length !== 128) {
+        if (!worker.profile_path || worker.profile_path === 'temp/placeholder_profile.jpg') {
+          throw new Error('Foto profil wajah belum tersedia. Ganti foto profil sebelum menyetujui pekerja.')
+        }
+        const { data: signedPhoto, error: signedError } = await supabase.storage
+          .from('kiosk-photos')
+          .createSignedUrl(worker.profile_path, 60)
+        if (signedError || !signedPhoto) throw new Error('Foto profil tidak dapat dibuka.')
+        const response = await fetch(signedPhoto.signedUrl)
+        if (!response.ok) throw new Error('Foto profil gagal dimuat.')
+        faceDescriptor = await extractDescriptorFromBlob(await response.blob())
+      }
 
       // Move KTP Photo from temp to private bucket (using Supabase storage copy/move)
       if (worker.ktp_private_path) {
@@ -243,8 +269,8 @@ export default function WorkerApprovalPage() {
         .update({
           status: 'approved',
           is_active: true,
-          face_descriptor: dummyDescriptor,
-          ktp_private_path: ktpPrivatePath
+          ktp_private_path: ktpPrivatePath,
+          face_descriptor: faceDescriptor
         })
         .eq('id', worker.id)
 
@@ -481,7 +507,10 @@ export default function WorkerApprovalPage() {
         const originalWorker = workers.find(w => w.id === id)
         const { error } = await supabase
           .from('workers')
-          .update({ project_id: targetProject })
+          .update({
+            project_id: targetProject,
+            ...(targetJobScope ? { job_scope: targetJobScope } : {})
+          })
           .eq('id', id)
 
         if (error) throw error
@@ -492,13 +521,15 @@ export default function WorkerApprovalPage() {
           entity_id: id,
           action: 'BULK_TRANSFER_PROJECT',
           reason: `Pindah proyek massal ke ${targetProject}`,
-          old_data: { project_id: originalWorker?.project_id },
-          new_data: { project_id: targetProject }
+          old_data: { project_id: originalWorker?.project_id, job_scope: originalWorker?.job_scope },
+          new_data: { project_id: targetProject, job_scope: targetJobScope || originalWorker?.job_scope }
         })
         if (logErr) console.error('Gagal menulis audit log:', logErr.message)
       }
       setSuccessMsg(`Pekerja terpilih berhasil dipindahkan proyek!`)
       setSelectedWorkerIds([])
+      setTargetProject('')
+      setTargetJobScope('')
       await fetchWorkers()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal melakukan transfer massal'
@@ -547,6 +578,102 @@ export default function WorkerApprovalPage() {
     )
   }
 
+  // Search filter (name, NIK, job scope)
+  const filteredWorkers = useMemo(() => {
+    const scopedWorkers = workers.filter(worker =>
+      (!globalProjectId || worker.project_id === globalProjectId) &&
+      (!globalJobScope || worker.job_scope === globalJobScope)
+    )
+    if (!searchQuery.trim()) return scopedWorkers
+    const q = searchQuery.toLowerCase()
+    return scopedWorkers.filter(w =>
+      w.name.toLowerCase().includes(q) ||
+      w.nik.includes(q) ||
+      (w.job_scope || '').toLowerCase().includes(q)
+    )
+  }, [globalJobScope, globalProjectId, workers, searchQuery])
+
+  // Load job scope options when edit project changes
+  useEffect(() => {
+    if (showEditModal && editProjectId) {
+      fetchProjectJobScopes(editProjectId).then(setEditScopeOptions).catch(() => setEditScopeOptions([]))
+    }
+  }, [showEditModal, editProjectId])
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (targetProject) {
+        fetchProjectJobScopes(targetProject).then(setBulkScopeOptions).catch(() => setBulkScopeOptions([]))
+      } else {
+        setBulkScopeOptions([])
+      }
+    }, 0)
+    return () => clearTimeout(timeout)
+  }, [targetProject])
+
+  // Upload replacement photo (super admin only)
+  const handlePhotoUpload = async (file: File) => {
+    if (!photoEditWorker || !photoEditType) return
+    setPhotoUploading(true)
+    setErrorMsg(null)
+    try {
+      const ts = Date.now()
+      const isProfile = photoEditType === 'profile'
+      const newDescriptor = isProfile ? await extractDescriptorFromBlob(file) : null
+      const path = isProfile
+        ? `temp/profile_${photoEditWorker.nik}_${ts}.jpg`
+        : `private/${photoEditWorker.nik}_ktp_${ts}.jpg`
+
+      const { data: uploaded, error: upErr } = await supabase.storage
+        .from('kiosk-photos')
+        .upload(path, file, { contentType: file.type || 'image/jpeg' })
+      if (upErr || !uploaded) throw new Error(upErr?.message || 'Gagal mengunggah foto')
+
+      const oldPath = isProfile ? photoEditWorker.profile_path : photoEditWorker.ktp_private_path
+      const updatePayload = isProfile
+        ? { profile_path: uploaded.path, face_descriptor: newDescriptor }
+        : { ktp_private_path: uploaded.path }
+
+      const { error: updErr } = await supabase
+        .from('workers')
+        .update(updatePayload)
+        .eq('id', photoEditWorker.id)
+      if (updErr) {
+        await supabase.storage.from('kiosk-photos').remove([uploaded.path])
+        throw updErr
+      }
+
+      // Cleanup old photo (skip placeholder)
+      if (oldPath && oldPath !== 'temp/placeholder_profile.jpg') {
+        await supabase.storage.from('kiosk-photos').remove([oldPath])
+      }
+
+      const userRes = await supabase.auth.getUser()
+      await supabase.from('audit_logs').insert({
+        actor_id: userRes.data.user?.id || null,
+        entity_type: 'workers',
+        entity_id: photoEditWorker.id,
+        action: isProfile ? 'REPLACED_PROFILE_PHOTO' : 'REPLACED_KTP_PHOTO',
+        reason: 'Foto diganti oleh super admin',
+        old_data: { path: oldPath },
+        new_data: { path: uploaded.path }
+      })
+
+      setSuccessMsg(`Foto ${isProfile ? 'profil' : 'KTP'} ${photoEditWorker.name} berhasil diganti!`)
+      setPhotoEditWorker(null)
+      setPhotoEditType(null)
+      await fetchWorkers()
+      // Refresh preview if open
+      if (previewWorker && previewWorker.id === photoEditWorker.id) {
+        setPreviewWorker(null)
+      }
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal mengganti foto')
+    } finally {
+      setPhotoUploading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-8 text-slate-800">
       <div className="max-w-6xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
@@ -554,8 +681,8 @@ export default function WorkerApprovalPage() {
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Approval dan Kelola Pekerja</h1>
-            <p className="text-sm text-slate-500 mt-1">Review pendaftaran pekerja baru, edit profil, transfer lokasi, atau hapus pekerja</p>
+            <h1 className="text-2xl font-bold text-slate-900">Master Data Pekerja</h1>
+            <p className="text-sm text-slate-500 mt-1">Review pendaftaran pekerja baru, edit profil, transfer lokasi/proyek, atau hapus pekerja</p>
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
@@ -563,6 +690,26 @@ export default function WorkerApprovalPage() {
           >
             + Tambah Pekerja
           </button>
+        </div>
+
+        {/* Search Bar */}
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Cari cepat: nama tenaga, NIK, atau sub pekerjaan..."
+            className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold"
+            >
+              &times;
+            </button>
+          )}
         </div>
 
         {errorMsg && (
@@ -588,18 +735,27 @@ export default function WorkerApprovalPage() {
                 <select
                   className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none"
                   value={targetProject}
-                  onChange={e => setTargetProject(e.target.value)}
+                  onChange={e => { setTargetProject(e.target.value); setTargetJobScope('') }}
                 >
                   <option value="">Pilih Proyek...</option>
                   {projects.map(p => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
+                <select
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none"
+                  value={targetJobScope}
+                  onChange={e => setTargetJobScope(e.target.value)}
+                  disabled={!targetProject}
+                >
+                  <option value="">Sub pekerjaan (opsional)...</option>
+                  {bulkScopeOptions.map(scope => <option key={scope} value={scope}>{scope}</option>)}
+                </select>
                 <button
                   onClick={handleBulkTransfer}
                   className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-sm font-medium transition"
                 >
-                  Transfer Proyek
+                  Pindahkan Lokasi/Proyek
                 </button>
               </div>
 
@@ -629,12 +785,12 @@ export default function WorkerApprovalPage() {
                 <th className="py-3 px-4 w-12">
                   <input
                     type="checkbox"
-                    checked={selectedWorkerIds.length === workers.length && workers.length > 0}
+                    checked={selectedWorkerIds.length === filteredWorkers.length && filteredWorkers.length > 0}
                     onChange={() => {
-                      if (selectedWorkerIds.length === workers.length) {
+                      if (selectedWorkerIds.length === filteredWorkers.length) {
                         setSelectedWorkerIds([])
                       } else {
-                        setSelectedWorkerIds(workers.map(w => w.id))
+                        setSelectedWorkerIds(filteredWorkers.map(w => w.id))
                       }
                     }}
                   />
@@ -653,12 +809,14 @@ export default function WorkerApprovalPage() {
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-slate-400">Memuat data...</td>
                 </tr>
-              ) : workers.length === 0 ? (
+              ) : filteredWorkers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">Tidak ada data pekerja.</td>
+                  <td colSpan={8} className="py-8 text-center text-slate-400">
+                    {searchQuery ? `Tidak ada pekerja cocok dengan "${searchQuery}"` : 'Tidak ada data pekerja.'}
+                  </td>
                 </tr>
               ) : (
-                workers.map(worker => (
+                filteredWorkers.map(worker => (
                   <tr key={worker.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
                     <td className="py-3 px-4">
                       <input
@@ -715,7 +873,7 @@ export default function WorkerApprovalPage() {
                                 setSelectedWorker(worker)
                                 setIsRejecting(true)
                               }}
-                              className="px-2.5 py-1 bg-red-650 hover:bg-red-700 text-white rounded text-xs font-semibold transition"
+                              className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-semibold transition"
                             >
                               Tolak
                             </button>
@@ -867,9 +1025,22 @@ export default function WorkerApprovalPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Job Scope</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Sub Pekerjaan / Job Scope</label>
+                  {editScopeOptions.length > 0 && (
+                    <select
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none mb-2"
+                      value={editScopeOptions.includes(editJobScope) ? editJobScope : ''}
+                      onChange={e => { if (e.target.value) setEditJobScope(e.target.value) }}
+                    >
+                      <option value="">Pilih dari daftar sub pekerjaan...</option>
+                      {editScopeOptions.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  )}
                   <input
                     type="text"
+                    placeholder="atau ketik manual"
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none text-slate-800"
                     value={editJobScope}
                     onChange={e => setEditJobScope(e.target.value)}
@@ -966,7 +1137,7 @@ export default function WorkerApprovalPage() {
             <div className="bg-white rounded-2xl p-6 max-w-md w-full">
               <h3 className="text-lg font-bold text-slate-800 mb-4">Tolak Pendaftaran Pekerja</h3>
               <textarea
-                className="w-full p-3 border border-slate-200 rounded-lg text-slate-850 focus:outline-none focus:ring-2 focus:ring-red-600 mb-4"
+                className="w-full p-3 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-600 mb-4"
                 placeholder="Alasan penolakan pendaftaran..."
                 rows={4}
                 value={rejectReason}
@@ -990,6 +1161,41 @@ export default function WorkerApprovalPage() {
                   Batal
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* PHOTO EDIT MODAL (SUPER ADMIN) */}
+        {photoEditWorker && photoEditType && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+              <h3 className="text-lg font-bold text-slate-800 mb-1">
+                Ganti Foto {photoEditType === 'profile' ? 'Profil' : 'KTP'}
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">Pekerja: <strong>{photoEditWorker.name}</strong></p>
+
+              <label className="block w-full py-8 border-2 border-dashed border-slate-200 rounded-xl text-center text-sm text-slate-500 hover:border-emerald-300 hover:text-emerald-600 transition cursor-pointer mb-4">
+                {photoUploading ? 'Mengunggah...' : 'Klik untuk pilih file JPG/PNG'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  className="hidden"
+                  disabled={photoUploading}
+                  onChange={e => {
+                    if (e.target.files && e.target.files[0]) {
+                      handlePhotoUpload(e.target.files[0])
+                    }
+                  }}
+                />
+              </label>
+
+              <button
+                onClick={() => { setPhotoEditWorker(null); setPhotoEditType(null) }}
+                disabled={photoUploading}
+                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition disabled:opacity-50"
+              >
+                Batal
+              </button>
             </div>
           </div>
         )}
@@ -1069,6 +1275,14 @@ export default function WorkerApprovalPage() {
                             Tidak ada foto
                           </div>
                         )}
+                        {userRole === 'super_admin' && (
+                          <button
+                            onClick={() => { setPhotoEditWorker(previewWorker); setPhotoEditType('profile') }}
+                            className="mt-2 px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-semibold transition"
+                          >
+                            Ganti Foto
+                          </button>
+                        )}
                       </div>
 
                       {/* KTP Photo */}
@@ -1087,6 +1301,14 @@ export default function WorkerApprovalPage() {
                           <div className="w-full aspect-square max-w-[200px] bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs">
                             Tidak ada foto
                           </div>
+                        )}
+                        {userRole === 'super_admin' && (
+                          <button
+                            onClick={() => { setPhotoEditWorker(previewWorker); setPhotoEditType('ktp') }}
+                            className="mt-2 px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-semibold transition"
+                          >
+                            Ganti Foto KTP
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1109,7 +1331,7 @@ export default function WorkerApprovalPage() {
                         setSelectedWorker(previewWorker)
                         setIsRejecting(true)
                       }}
-                      className="px-6 py-2 bg-red-650 hover:bg-red-700 text-white rounded-xl text-sm font-semibold transition"
+                      className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold transition"
                     >
                       Tolak
                     </button>

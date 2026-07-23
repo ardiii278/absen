@@ -3,6 +3,16 @@ import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, getProjectLo
 import { supabase } from '@/lib/supabase'
 import { syncRequestSchema } from '@/lib/validators'
 
+function distanceInMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const earthRadius = 6371000
+  const toRadians = (degrees: number) => degrees * Math.PI / 180
+  const dLat = toRadians(lat2 - lat1)
+  const dLng = toRadians(lng2 - lng1)
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLng / 2) ** 2
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 export async function POST(req: NextRequest) {
   try {
     // 1. Authenticate user/session
@@ -36,6 +46,34 @@ export async function POST(req: NextRequest) {
         if (!hasAccess) {
           results.push({ client_event_id, status: 'failed', error: 'Akses proyek ditolak' })
           continue
+        }
+
+        const { data: project, error: projectErr } = await client
+          .from('projects')
+          .select('lat, lng, radius_m')
+          .eq('id', payload.project_id)
+          .maybeSingle()
+
+        if (projectErr || !project) {
+          results.push({ client_event_id, status: 'failed', error: 'Proyek tidak ditemukan' })
+          continue
+        }
+
+        if (project.lat !== null && project.lng !== null && project.radius_m !== null) {
+          const distance = distanceInMeters(
+            payload.gps.latitude,
+            payload.gps.longitude,
+            Number(project.lat),
+            Number(project.lng)
+          )
+          if (distance > Number(project.radius_m)) {
+            results.push({
+              client_event_id,
+              status: 'failed',
+              error: `Lokasi berada ${Math.round(distance)} meter dari proyek (batas ${project.radius_m} meter)`
+            })
+            continue
+          }
         }
 
         // B. Verify worker belongs to project and is active
@@ -150,7 +188,7 @@ export async function POST(req: NextRequest) {
         results.push({ client_event_id, status: 'success' })
       } catch (err: unknown) {
         console.error('Sync event error:', err)
-        await logServerError(supabase, '/api/sync (event)', 'POST', err)
+        await logServerError(client, '/api/sync (event)', 'POST', err)
         results.push({ client_event_id, status: 'failed', error: 'Gagal memproses event' })
       }
     }

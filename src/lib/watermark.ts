@@ -5,7 +5,8 @@ export async function watermark(
   const c = document.createElement('canvas')
   c.width = video.videoWidth || 640
   c.height = video.videoHeight || 480
-  const x = c.getContext('2d')!
+  const x = c.getContext('2d')
+  if (!x) throw new Error('Failed to get canvas 2d context')
   x.drawImage(video, 0, 0)
   
   // Overlay background bar

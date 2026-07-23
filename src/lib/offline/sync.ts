@@ -1,14 +1,17 @@
 import { db } from './db'
+import { supabase } from '@/lib/supabase'
 
-export async function startBackgroundSync() {
-  if (!navigator.onLine) return
+export async function startBackgroundSync(): Promise<{ synced: number; failed: number }> {
+  if (!navigator.onLine) return { synced: 0, failed: 0 }
 
   const queuedItems = await db.queue.where('status').anyOf('queued', 'failed').toArray()
-  if (queuedItems.length === 0) return
+  if (queuedItems.length === 0) return { synced: 0, failed: 0 }
 
-  // Mark status as syncing
-  const ids = queuedItems.map(item => item.id!)
+  const ids = queuedItems.map(item => item.id!).filter(id => id !== undefined)
   await db.queue.where('id').anyOf(ids).modify({ status: 'syncing' })
+
+  let synced = 0
+  let failed = 0
 
   try {
     const payloadEvents = []
@@ -21,9 +24,15 @@ export async function startBackgroundSync() {
       })
     }
 
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) throw new Error('Sesi kiosk tidak tersedia')
+
     const res = await fetch('/api/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`
+      },
       body: JSON.stringify({ events: payloadEvents })
     })
 
@@ -34,26 +43,37 @@ export async function startBackgroundSync() {
 
     for (const result of results) {
       const dbItem = queuedItems.find(item => item.client_event_id === result.client_event_id)
-      if (dbItem) {
+      if (dbItem && dbItem.id) {
         if (result.status === 'success') {
-          // Delete from IndexedDB queue on successful server ingestion
-          await db.queue.delete(dbItem.id!)
+          await db.queue.delete(dbItem.id)
+          synced++
         } else {
-          // Update failed attempts and retry status
-          await db.queue.update(dbItem.id!, {
+          await db.queue.update(dbItem.id, {
             status: 'failed',
             attempts: dbItem.attempts + 1
           })
+          failed++
         }
       }
     }
   } catch (err: unknown) {
     console.error('Offline sync failed:', err)
-    // Reset status back to failed/queued to allow future retry
     await db.queue.where('id').anyOf(ids).modify(item => {
       item.status = 'failed'
       item.attempts += 1
     })
+    failed = queuedItems.length
+  }
+
+  return { synced, failed }
+}
+
+export async function getQueuedWorkerIds(): Promise<Set<string>> {
+  try {
+    const items = await db.queue.where('status').anyOf('queued', 'failed', 'syncing').toArray()
+    return new Set(items.map(i => i.worker_id))
+  } catch {
+    return new Set()
   }
 }
 

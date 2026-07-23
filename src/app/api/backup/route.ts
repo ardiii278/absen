@@ -298,6 +298,11 @@ export async function POST(req: NextRequest) {
     worksheet.getColumn(nextColIdx + 2).width = 16
     worksheet.getColumn(nextColIdx + 3).width = 18
 
+    // Number format with thousand separators (e.g. 150,000)
+    worksheet.getColumn(3).numFmt = '#,##0'
+    worksheet.getColumn(nextColIdx + 2).numFmt = '#,##0'
+    worksheet.getColumn(nextColIdx + 3).numFmt = '#,##0'
+
     worksheet.getRow(3).height = 20
     worksheet.getRow(4).height = 18
 
@@ -408,8 +413,8 @@ export async function POST(req: NextRequest) {
     })
 
     const totalRowNum = workers.length + 5
-    worksheet.getCell('A${totalRowNum}').value = 'TOTAL'
-    worksheet.getCell('A${totalRowNum}').font = { bold: true }
+    worksheet.getCell(`A${totalRowNum}`).value = 'TOTAL'
+    worksheet.getCell(`A${totalRowNum}`).font = { bold: true }
     worksheet.getCell(`${totalWageColLetter}${totalRowNum}`).value = {
       formula: `=SUM(${totalWageColLetter}5:${totalWageColLetter}${totalRowNum - 1})`,
       result: totalWagesSum
@@ -428,9 +433,8 @@ export async function POST(req: NextRequest) {
 
     for (const record of attendance) {
       const dateStr = new Date(record.occurred_at).toISOString().split('T')[0]
-      const safeNik = (record.workers?.nik || 'unknown').replace(/[^a-zA-Z0-9]/g, '')
-      const safeType = (record.type || 'unknown').replace(/[^a-zA-Z0-9]/g, '')
-      const fileName = `${dateStr}_${safeNik}_${safeType}_${record.id.substring(0, 8)}.jpg`
+      const safeName = (record.workers?.name || 'unknown').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')
+      const fileName = `${safeName}.jpg`
 
       const manifestItem: ManifestItem = {
         event_id: record.id,
@@ -457,8 +461,9 @@ export async function POST(req: NextRequest) {
             manifestItem.error = 'Gagal mengunduh foto dari storage'
           } else {
             const arrayBuffer = await fileData.arrayBuffer()
-            photosFolder?.file(fileName, Buffer.from(arrayBuffer))
-            manifestItem.photo_file = `photos/${fileName}`
+            const dateFolder = photosFolder?.folder(dateStr)
+            dateFolder?.file(fileName, Buffer.from(arrayBuffer))
+            manifestItem.photo_file = `photos/${dateStr}/${fileName}`
             manifestItem.photo_status = 'success'
           }
         } else {

@@ -23,23 +23,26 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === 'admin') {
-      // --- Admin Login (pakai profiles.username) ---
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id, role, username')
-        .eq('username', username)
-        .in('role', ['admin', 'super_admin'])
-        .maybeSingle()
+      // --- Admin Login ---
+      const email = `admin_${username}@internal-dashboard.local`
 
-      if (!profile) {
+      // Authenticate via Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+
+      if (authError || !authData.session) {
         await recordLoginAttempt(supabase, ip)
         return NextResponse.json({ error: 'Username atau password salah' }, { status: 401 })
       }
 
-      const email = `admin_${username}@internal-dashboard.local`
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+      // Verify role from profiles
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('id', authData.user.id)
+        .in('role', ['admin', 'super_admin'])
+        .maybeSingle()
 
-      if (authError || !authData.session) {
+      if (!profile) {
         await recordLoginAttempt(supabase, ip)
         return NextResponse.json({ error: 'Username atau password salah' }, { status: 401 })
       }

@@ -13,6 +13,7 @@ interface Worker {
 
 interface OvertimeRecord {
   id: string
+  project_id: string
   work_date: string
   hours: number | null
   status: 'pending_approval' | 'approved' | 'rejected'
@@ -20,6 +21,7 @@ interface OvertimeRecord {
   projects: {
     name: string
   } | null
+  overtime_workers: { worker_id: string; hours: number }[]
 }
 
 interface Project {
@@ -43,6 +45,14 @@ export default function OvertimePage() {
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
   const [submitLoading, setSubmitLoading] = useState(false)
 
+  // Edit State
+  const [editingOvertime, setEditingOvertime] = useState<OvertimeRecord | null>(null)
+  const [editProjectId, setEditProjectId] = useState('')
+  const [editWorkDate, setEditWorkDate] = useState('')
+  const [editHours, setEditHours] = useState(1.5)
+  const [editWorkerIds, setEditWorkerIds] = useState<string[]>([])
+  const [editLoading, setEditLoading] = useState(false)
+
   // Preview State
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null)
   const [previewTitle, setPreviewTitle] = useState('')
@@ -61,7 +71,7 @@ export default function OvertimePage() {
 
       const { data: otData, error: otErr } = await supabase
         .from('overtime')
-        .select('id, work_date, hours, status, evidence_path, projects(name)')
+        .select('id, project_id, work_date, hours, status, evidence_path, projects(name), overtime_workers(worker_id, hours)')
         .order('work_date', { ascending: false })
 
       if (otErr) throw otErr
@@ -219,6 +229,76 @@ export default function OvertimePage() {
     }
   }
 
+  const openEditModal = (record: OvertimeRecord) => {
+    setEditingOvertime(record)
+    setEditProjectId(record.project_id)
+    setEditWorkDate(record.work_date)
+    setEditHours(record.hours || 0.5)
+    setEditWorkerIds(record.overtime_workers.map((mapping) => mapping.worker_id))
+    setErrorMsg(null)
+  }
+
+  const handleEditOvertime = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingOvertime || !editProjectId || !editWorkDate || editWorkerIds.length === 0 || editHours < 0.5) {
+      setErrorMsg('Semua field edit wajib diisi termasuk checklist pekerja.')
+      return
+    }
+    const validWorkerIds = new Set(workers.filter((worker) => worker.project_id === editProjectId).map((worker) => worker.id))
+    if (editWorkerIds.some((id) => !validWorkerIds.has(id))) {
+      setErrorMsg('Pekerja yang dipilih harus aktif dan berasal dari proyek tujuan.')
+      return
+    }
+
+    setEditLoading(true)
+    setErrorMsg(null)
+    setSuccessMsg(null)
+    const oldData = {
+      project_id: editingOvertime.project_id,
+      work_date: editingOvertime.work_date,
+      hours: editingOvertime.hours,
+      workers: editingOvertime.overtime_workers.map((mapping) => mapping.worker_id)
+    }
+    const newData = { project_id: editProjectId, work_date: editWorkDate, hours: editHours, workers: editWorkerIds }
+
+    try {
+      const { error: updateError } = await supabase.from('overtime').update({
+        project_id: editProjectId,
+        work_date: editWorkDate,
+        hours: editHours
+      }).eq('id', editingOvertime.id)
+      if (updateError) throw updateError
+
+      const { error: deleteError } = await supabase.from('overtime_workers').delete().eq('overtime_id', editingOvertime.id)
+      if (deleteError) throw deleteError
+      const { error: insertError } = await supabase.from('overtime_workers').insert(
+        editWorkerIds.map((workerId) => ({ overtime_id: editingOvertime.id, worker_id: workerId, hours: editHours }))
+      )
+      if (insertError) throw insertError
+
+      const userRes = await supabase.auth.getUser()
+      if (userRes.error) throw userRes.error
+      const { error: logError } = await supabase.from('audit_logs').insert({
+        actor_id: userRes.data.user?.id || null,
+        entity_type: 'overtime',
+        entity_id: editingOvertime.id,
+        action: 'UPDATED_OVERTIME_REQUEST',
+        reason: 'Perubahan detail pengajuan lembur',
+        old_data: oldData,
+        new_data: newData
+      })
+      if (logError) throw logError
+
+      setEditingOvertime(null)
+      setSuccessMsg('Pengajuan lembur berhasil diperbarui.')
+      await fetchData()
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal memperbarui pengajuan lembur')
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
   const toggleWorkerSelection = (id: string) => {
     setSelectedWorkerIds(prev =>
       prev.includes(id) ? prev.filter(wId => wId !== id) : [...prev, id]
@@ -249,7 +329,7 @@ export default function OvertimePage() {
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Proyek</label>
             <select
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-850 focus:outline-none"
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none"
               value={selectedProjectId}
               onChange={e => {
                 setSelectedProjectId(e.target.value)
@@ -267,7 +347,7 @@ export default function OvertimePage() {
             <label className="block text-xs font-semibold text-slate-700 mb-1">Tanggal Lembur</label>
             <input
               type="date"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-850 focus:outline-none"
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none"
               value={workDate}
               onChange={e => setWorkDate(e.target.value)}
             />
@@ -279,7 +359,7 @@ export default function OvertimePage() {
               type="number"
               step="0.5"
               min="0.5"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-850 focus:outline-none"
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none"
               value={hours}
               onChange={e => setHours(Number(e.target.value))}
             />
@@ -386,8 +466,10 @@ export default function OvertimePage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
-                      {ot.status === 'pending_approval' && (
-                        <div className="flex gap-2 justify-end">
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => openEditModal(ot)} className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition">Edit</button>
+                        {ot.status === 'pending_approval' && (
+                          <>
                           <button
                             onClick={() => handleApproveOvertime(ot.id, 'approved')}
                             className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-xs transition"
@@ -400,8 +482,9 @@ export default function OvertimePage() {
                           >
                             Tolak
                           </button>
-                        </div>
-                      )}
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -425,6 +508,45 @@ export default function OvertimePage() {
             >
               Tutup
             </button>
+          </div>
+        </div>
+      )}
+
+      {editingOvertime && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6">
+            <h3 className="mb-5 text-lg font-bold text-slate-900">Edit Pengajuan Lembur</h3>
+            <form onSubmit={handleEditOvertime} className="space-y-4">
+              <label className="block text-xs font-semibold text-slate-700">Proyek
+                <select value={editProjectId} onChange={(e) => { setEditProjectId(e.target.value); setEditWorkerIds([]) }} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <option value="">Pilih Proyek...</option>
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select>
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-700">Tanggal Lembur
+                  <input type="date" value={editWorkDate} onChange={(e) => setEditWorkDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </label>
+                <label className="text-xs font-semibold text-slate-700">Jumlah Jam
+                  <input type="number" min="0.5" max="24" step="0.5" value={editHours} onChange={(e) => setEditHours(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </label>
+              </div>
+              <div>
+                <span className="mb-2 block text-xs font-semibold text-slate-700">Pekerja Aktif</span>
+                <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border border-slate-200 p-3">
+                  {workers.filter((worker) => worker.project_id === editProjectId).map((worker) => (
+                    <label key={worker.id} className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+                      <input type="checkbox" checked={editWorkerIds.includes(worker.id)} onChange={() => setEditWorkerIds((ids) => ids.includes(worker.id) ? ids.filter((id) => id !== worker.id) : [...ids, worker.id])} />
+                      {worker.name} ({worker.nik})
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                <button type="button" disabled={editLoading} onClick={() => setEditingOvertime(null)} className="rounded-xl bg-slate-100 px-5 py-2 text-sm font-semibold text-slate-700">Batal</button>
+                <button type="submit" disabled={editLoading} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{editLoading ? 'Menyimpan...' : 'Simpan Perubahan'}</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -57,9 +57,9 @@ export const syncEventSchema = z.object({
     }),
     gps: gpsSchema,
     source: z.enum(['face', 'manual'])
-  }).refine((data) => data.client_event_id === data.client_event_id, {
-    message: 'client_event_id di payload harus sama dengan level terluar'
   })
+}).refine((data) => data.client_event_id === data.payload.client_event_id, {
+  message: 'client_event_id di payload harus sama dengan level terluar'
 })
 
 export const syncRequestSchema = z.object({

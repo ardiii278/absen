@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     // 3. Look up kiosk account
     const { data: kiosk, error: kioskError } = await supabase
       .from('kiosk_accounts')
-      .select('auth_user_id, is_active, project_id')
+      .select('id, auth_user_id, is_active, project_id')
       .eq('username', username)
       .maybeSingle()
 
