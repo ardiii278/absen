@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, getProjectLocalDayBoundaries, logServerError } from '@/lib/server-auth'
+import { createServiceClient, verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, getProjectLocalDayBoundaries, logServerError } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase'
 import { syncRequestSchema } from '@/lib/validators'
 
@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { client } = authContext
+    const storage = createServiceClient().storage.from('kiosk-photos')
 
     // 2. Validate request body
     const body = await req.json()
@@ -116,15 +117,13 @@ export async function POST(req: NextRequest) {
         const evidencePath = `evidence/${client_event_id}.jpg`
 
         // E. Upload evidence to storage with upsert: true for idempotency
-        const { error: uploadErr } = await client.storage
-          .from('kiosk-photos')
-          .upload(evidencePath, imageBuffer, {
+        const { error: uploadErr } = await storage.upload(evidencePath, imageBuffer, {
             contentType: 'image/jpeg',
             upsert: true
-          })
+        })
 
         if (uploadErr) {
-          results.push({ client_event_id, status: 'failed', error: 'Gagal mengunggah foto bukti' })
+          results.push({ client_event_id, status: 'failed', error: `Gagal mengunggah foto bukti: ${uploadErr.message}` })
           continue
         }
 
@@ -143,7 +142,7 @@ export async function POST(req: NextRequest) {
 
         if (dupErr) {
           // Cleanup uploaded photo on db error
-          await client.storage.from('kiosk-photos').remove([evidencePath])
+          await storage.remove([evidencePath])
           results.push({ client_event_id, status: 'failed', error: 'Gagal memeriksa konflik absensi' })
           continue
         }
@@ -180,7 +179,7 @@ export async function POST(req: NextRequest) {
 
         if (insertErr) {
           // Cleanup uploaded photo on db failure
-          await client.storage.from('kiosk-photos').remove([evidencePath])
+          await storage.remove([evidencePath])
           results.push({ client_event_id, status: 'failed', error: 'Gagal menyimpan data absensi' })
           continue
         }

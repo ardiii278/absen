@@ -183,6 +183,7 @@ export default function UserPage() {
     blob: Blob,
     workerName: string
   ) => {
+    let shouldQueueOffline = !navigator.onLine
     if (navigator.onLine) {
       try {
         const { data: { session } } = await supabase.auth.getSession()
@@ -213,13 +214,17 @@ export default function UserPage() {
         await fetchWorkersAndLogs()
         return
       } catch (err: unknown) {
-        console.error(err instanceof Error ? err.message : 'Submit error')
-        if (err instanceof Error && /lokasi|proyek|pekerja|aktif/i.test(err.message)) {
-          setErrorMsg(err.message)
+        const message = err instanceof Error ? err.message : 'Gagal menyimpan absensi'
+        console.error(message)
+        shouldQueueOffline = err instanceof TypeError || /network|fetch|koneksi|timeout/i.test(message)
+        if (!shouldQueueOffline) {
+          setErrorMsg(message)
           return
         }
       }
     }
+
+    if (!shouldQueueOffline) return
 
     // Offline queue
     await db.queue.add({

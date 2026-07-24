@@ -36,7 +36,10 @@ export async function startBackgroundSync(): Promise<{ synced: number; failed: n
       body: JSON.stringify({ events: payloadEvents })
     })
 
-    if (!res.ok) throw new Error('Sync endpoint failed')
+    if (!res.ok) {
+      const errorBody = await res.json().catch(() => null)
+      throw new Error(errorBody?.error || `Sync endpoint gagal (${res.status})`)
+    }
 
     const data = await res.json()
     const results = data.results || []
@@ -48,6 +51,7 @@ export async function startBackgroundSync(): Promise<{ synced: number; failed: n
           await db.queue.delete(dbItem.id)
           synced++
         } else {
+          console.error(`Sync absensi gagal: ${result.error || 'Error tidak diketahui'}`)
           await db.queue.update(dbItem.id, {
             status: 'failed',
             attempts: dbItem.attempts + 1
