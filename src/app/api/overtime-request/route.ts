@@ -14,7 +14,8 @@ const requestSchema = z.object({
   }),
   workerIds: z.array(z.string().uuid()).min(1).max(500)
     .refine((ids) => new Set(ids).size === ids.length, 'Pekerja tidak boleh duplikat'),
-  evidenceBase64: base64ImageSchema.optional()
+  evidenceBase64: z.array(base64ImageSchema).max(5).optional(),
+  description: z.string().trim().max(500).optional()
 })
 
 export async function POST(req: NextRequest) {
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Payload tidak valid' }, { status: 400 })
   }
 
-  const { projectId, workDate, hours, workerIds, evidenceBase64 } = parsed.data
+  const { projectId, workDate, hours, workerIds, evidenceBase64 = [], description } = parsed.data
   const hasAccess = await verifyProjectAccess(auth.client, auth.user.id, auth.profile.role, projectId)
   if (!hasAccess) return NextResponse.json({ error: 'Akses proyek ditolak' }, { status: 403 })
 
@@ -62,22 +63,24 @@ export async function POST(req: NextRequest) {
   }
 
   const overtimeId = crypto.randomUUID()
-  let evidencePath: string | null = null
+  const evidencePaths: string[] = []
   let overtimeInserted = false
   try {
-    if (evidenceBase64) {
-      const image = Buffer.from(evidenceBase64.replace(/\s/g, ''), 'base64')
-      const isPng = image[0] === 0x89
-      evidencePath = `overtime/${overtimeId}.${isPng ? 'png' : 'jpg'}`
-      const { error } = await service.storage.from('kiosk-photos').upload(evidencePath, image, {
-        contentType: isPng ? 'image/png' : 'image/jpeg', upsert: false
-      })
-      if (error) throw new Error('Gagal mengunggah foto bukti lembur')
+    for (let index = 0; index < evidenceBase64.length; index++) {
+      const image = Buffer.from(evidenceBase64[index].replace(/\s/g, ''), 'base64')
+      const path = `overtime/${overtimeId}_${index + 1}.jpg`
+      const { error } = await service.storage.from('kiosk-photos').upload(path, image, { contentType: 'image/jpeg', upsert: false })
+      if (error) throw new Error(`Gagal mengunggah foto bukti lembur ke-${index + 1}`)
+      evidencePaths.push(path)
     }
+
+    const evidenceMetadata = evidencePaths.length || description
+      ? JSON.stringify({ paths: evidencePaths, description: description || '' })
+      : null
 
     const { error: overtimeError } = await service.from('overtime').insert({
       id: overtimeId, project_id: projectId, work_date: workDate, hours,
-      evidence_path: evidencePath, status: 'pending_approval', created_by: auth.user.id
+      evidence_path: evidenceMetadata, status: 'pending_approval', created_by: auth.user.id
     })
     if (overtimeError) throw new Error('Gagal menyimpan pengajuan lembur')
     overtimeInserted = true
@@ -90,14 +93,14 @@ export async function POST(req: NextRequest) {
     const { error: auditError } = await service.from('audit_logs').insert({
       actor_id: auth.user.id, entity_type: 'overtime', entity_id: overtimeId,
       action: 'CREATED_OVERTIME_REQUEST', reason: `Pengajuan lembur ${hours} jam`,
-      new_data: { project_id: projectId, work_date: workDate, hours, workers: workerIds, evidence_path: evidencePath }
+      new_data: { project_id: projectId, work_date: workDate, hours, workers: workerIds, evidence_paths: evidencePaths, description }
     })
     if (auditError) throw new Error('Gagal menulis audit pengajuan lembur')
 
     return NextResponse.json({ id: overtimeId }, { status: 201 })
   } catch (error: unknown) {
     if (overtimeInserted) await service.from('overtime').delete().eq('id', overtimeId)
-    if (evidencePath) await service.storage.from('kiosk-photos').remove([evidencePath])
+    if (evidencePaths.length) await service.storage.from('kiosk-photos').remove(evidencePaths)
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Gagal membuat pengajuan lembur' }, { status: 500 })
   }
 }

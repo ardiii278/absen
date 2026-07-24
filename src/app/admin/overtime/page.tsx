@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { blobToBase64, compressEvidenceImage } from '@/lib/image-compression'
 
 interface Worker {
   id: string
@@ -24,6 +25,19 @@ interface OvertimeRecord {
   overtime_workers: { worker_id: string; hours: number }[]
 }
 
+function overtimeEvidence(value: string | null): { paths: string[]; description: string } {
+  if (!value) return { paths: [], description: '' }
+  try {
+    const parsed = JSON.parse(value) as { paths?: unknown; description?: unknown }
+    return {
+      paths: Array.isArray(parsed.paths) ? parsed.paths.filter((path): path is string => typeof path === 'string') : [],
+      description: typeof parsed.description === 'string' ? parsed.description : ''
+    }
+  } catch {
+    return { paths: [value], description: '' }
+  }
+}
+
 interface Project {
   id: string
   name: string
@@ -42,7 +56,8 @@ export default function OvertimePage() {
   const [workDate, setWorkDate] = useState('')
   const [hours, setHours] = useState(1.5)
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([])
-  const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
+  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([])
+  const [description, setDescription] = useState('')
   const [submitLoading, setSubmitLoading] = useState(false)
 
   // Edit State
@@ -54,7 +69,7 @@ export default function OvertimePage() {
   const [editLoading, setEditLoading] = useState(false)
 
   // Preview State
-  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null)
+  const [previewPhotoUrls, setPreviewPhotoUrls] = useState<string[]>([])
   const [previewTitle, setPreviewTitle] = useState('')
 
   const fetchData = useCallback(async () => {
@@ -108,70 +123,23 @@ export default function OvertimePage() {
 
     setSubmitLoading(true)
     try {
-      const userRes = await supabase.auth.getUser()
-      if (userRes.error) throw userRes.error
-
-      let evidencePath = null
-      if (evidenceFile) {
-        const fileExt = evidenceFile.name.split('.').pop()
-        const fileName = `${crypto.randomUUID()}.${fileExt}`
-        const { data: uploadData, error: uploadErr } = await supabase.storage
-          .from('kiosk-photos')
-          .upload(`overtime/${fileName}`, evidenceFile)
-
-        if (uploadErr) {
-          throw new Error('Gagal mengunggah foto bukti lembur: ' + uploadErr.message)
-        }
-        evidencePath = uploadData?.path || null
-      }
-
-      // 1. Create Overtime entry
-      const { data: otData, error: otErr } = await supabase
-        .from('overtime')
-        .insert({
-          project_id: selectedProjectId,
-          work_date: workDate,
-          hours: hours,
-          evidence_path: evidencePath,
-          status: 'pending_approval',
-          created_by: userRes.data.user?.id || null
-        })
-        .select()
-        .single()
-
-      if (otErr || !otData) throw otErr || new Error('Gagal membuat pengajuan lembur')
-
-      // 2. Map workers to overtime
-      const mappings = selectedWorkerIds.map(wId => ({
-        overtime_id: otData.id,
-        worker_id: wId,
-        hours: hours
-      }))
-
-      const { error: mapErr } = await supabase.from('overtime_workers').insert(mappings)
-      if (mapErr) {
-        // Rollback uploaded file if DB insert fails
-        if (evidencePath) {
-          await supabase.storage.from('kiosk-photos').remove([evidencePath])
-        }
-        throw mapErr
-      }
-
-      // 3. Log to Audit
-      const { error: logErr } = await supabase.from('audit_logs').insert({
-        actor_id: userRes.data.user?.id || null,
-        entity_type: 'overtime',
-        entity_id: otData.id,
-        action: 'CREATED_OVERTIME_REQUEST',
-        reason: `Pengajuan lembur ${hours} jam`,
-        new_data: { work_date: workDate, hours, workers: selectedWorkerIds, evidence_path: evidencePath }
+      const session = await supabase.auth.getSession()
+      const token = session.data.session?.access_token
+      if (!token) throw new Error('Sesi admin berakhir. Silakan login ulang.')
+      const evidenceBase64 = await Promise.all(evidenceFiles.map(async file => blobToBase64(await compressEvidenceImage(file))))
+      const response = await fetch('/api/overtime-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ projectId: selectedProjectId, workDate, hours, workerIds: selectedWorkerIds, evidenceBase64, description: description.trim() || undefined })
       })
-      if (logErr) console.error('Gagal menulis audit log:', logErr.message)
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Gagal membuat pengajuan lembur')
 
       // Reset form
       setSelectedWorkerIds([])
       setWorkDate('')
-      setEvidenceFile(null)
+      setEvidenceFiles([])
+      setDescription('')
       // Reset input element
       const fileInput = document.getElementById('evidence_file_input') as HTMLInputElement
       if (fileInput) fileInput.value = ''
@@ -213,16 +181,14 @@ export default function OvertimePage() {
   }
 
   const handlePreviewPhoto = async (record: OvertimeRecord) => {
-    if (!record.evidence_path) return
-    setPreviewPhotoUrl(null)
+    const evidence = overtimeEvidence(record.evidence_path)
+    if (!evidence.paths.length) return
+    setPreviewPhotoUrls([])
     setPreviewTitle(`Foto Bukti Lembur - ${record.projects?.name} (${new Date(record.work_date).toLocaleDateString('id-ID')})`)
     try {
-      const { data, error } = await supabase.storage
-        .from('kiosk-photos')
-        .createSignedUrl(record.evidence_path, 60)
-
+      const { data, error } = await supabase.storage.from('kiosk-photos').createSignedUrls(evidence.paths, 120)
       if (error) throw error
-      if (data) setPreviewPhotoUrl(data.signedUrl)
+      setPreviewPhotoUrls((data || []).map((item: { signedUrl: string }) => item.signedUrl).filter(Boolean))
     } catch (err) {
       console.error('Gagal memuat foto bukti:', err)
       setErrorMsg('Gagal memuat foto bukti lembur.')
@@ -366,18 +332,23 @@ export default function OvertimePage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Foto Bukti Lembur</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Keterangan (opsional)</label>
+            <textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={500} rows={3} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="Keterangan pekerjaan lembur" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Foto Bukti Lembur (maksimal 5)</label>
             <input
               id="evidence_file_input"
               type="file"
-              accept="image/jpeg,image/png"
+              multiple
+              accept="image/jpeg,image/png,image/webp"
               className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
               onChange={e => {
-                if (e.target.files && e.target.files[0]) {
-                  setEvidenceFile(e.target.files[0])
-                }
+                setEvidenceFiles(Array.from(e.target.files || []).slice(0, 5))
               }}
             />
+            {evidenceFiles.length > 0 && <p className="mt-1 text-xs text-slate-500">{evidenceFiles.length} foto dipilih dan akan dikompres.</p>}
           </div>
 
           {selectedProjectId && (
@@ -424,6 +395,7 @@ export default function OvertimePage() {
                 <th className="py-3 px-4">Tanggal Kerja</th>
                 <th className="py-3 px-4">Jam Lembur</th>
                 <th className="py-3 px-4">Bukti Foto</th>
+                <th className="py-3 px-4">Keterangan</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Aksi</th>
               </tr>
@@ -431,11 +403,11 @@ export default function OvertimePage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">Memuat data...</td>
+                  <td colSpan={7} className="py-8 text-center text-slate-400">Memuat data...</td>
                 </tr>
               ) : overtimes.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">Belum ada pengajuan lembur.</td>
+                  <td colSpan={7} className="py-8 text-center text-slate-400">Belum ada pengajuan lembur.</td>
                 </tr>
               ) : (
                 overtimes.map(ot => (
@@ -444,17 +416,18 @@ export default function OvertimePage() {
                     <td className="py-3 px-4 text-sm">{new Date(ot.work_date).toLocaleDateString('id-ID')}</td>
                     <td className="py-3 px-4 font-medium">{ot.hours} Jam</td>
                     <td className="py-3 px-4">
-                      {ot.evidence_path ? (
+                       {overtimeEvidence(ot.evidence_path).paths.length ? (
                         <button
                           onClick={() => handlePreviewPhoto(ot)}
                           className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-xs font-semibold transition"
                         >
-                          Lihat Foto
+                           Lihat {overtimeEvidence(ot.evidence_path).paths.length} Foto
                         </button>
                       ) : (
                         <span className="text-xs text-slate-400">Tidak ada</span>
                       )}
                     </td>
+                    <td className="max-w-xs py-3 px-4 text-xs text-slate-600">{overtimeEvidence(ot.evidence_path).description || '-'}</td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
                         ot.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
@@ -464,7 +437,7 @@ export default function OvertimePage() {
                         {ot.status === 'approved' ? 'Disetujui' :
                          ot.status === 'rejected' ? 'Ditolak' : 'Menunggu Approval'}
                       </span>
-                    </td>
+                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex gap-2 justify-end">
                         <button onClick={() => openEditModal(ot)} className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition">Edit</button>
@@ -495,15 +468,15 @@ export default function OvertimePage() {
       </div>
 
       {/* PHOTO PREVIEW MODAL */}
-      {previewPhotoUrl && (
+      {previewPhotoUrls.length > 0 && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-lg w-full flex flex-col items-center">
+          <div className="bg-white rounded-2xl p-6 max-w-4xl w-full flex flex-col items-center max-h-[92vh] overflow-y-auto">
             <h3 className="text-lg font-bold text-slate-800 mb-4">{previewTitle}</h3>
-            <div className="relative w-full aspect-video mb-4 rounded-xl overflow-hidden border border-slate-200">
-              <Image src={previewPhotoUrl} alt="Bukti Lembur" fill className="object-contain" unoptimized />
+            <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 mb-4">
+              {previewPhotoUrls.map((url, index) => <div key={url} className="relative aspect-video rounded-xl overflow-hidden border border-slate-200"><Image src={url} alt={`Bukti Lembur ${index + 1}`} fill className="object-contain" unoptimized /></div>)}
             </div>
             <button
-              onClick={() => setPreviewPhotoUrl(null)}
+              onClick={() => setPreviewPhotoUrls([])}
               className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-semibold transition"
             >
               Tutup

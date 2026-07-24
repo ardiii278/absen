@@ -6,15 +6,12 @@ import { LogIn, LogOut } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { db } from '@/lib/offline/db'
 import { startBackgroundSync } from '@/lib/offline/sync'
-import { UserWorker, UserLogEntry, UserAttendancePair } from '@/types/user'
+import { UserWorker, UserLogEntry } from '@/types/user'
 import UserHeader from '@/components/user/UserHeader'
 import UserScanner from '@/components/user/UserScanner'
 import ManualAttendanceModal from '@/components/user/ManualAttendanceModal'
-import TodayAttendanceTable from '@/components/user/TodayAttendanceTable'
 import UserOvertimeModal from '@/components/user/UserOvertimeModal'
 
-type HistoryPeriod = 'day' | 'week' | 'month'
-type HistoryAttendancePair = UserAttendancePair & { local_date: string }
 
 interface RawAttendanceLog {
   id: string
@@ -36,8 +33,6 @@ export default function UserPage() {
   const [isOnline, setIsOnline] = useState(true)
   const [queuedCount, setQueuedCount] = useState(0)
   const [isSyncing, setIsSyncing] = useState(false)
-  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('day')
-  const [historyLoading, setHistoryLoading] = useState(false)
   const [permissionReady, setPermissionReady] = useState(false)
   const [permissionStatus, setPermissionStatus] = useState<string | null>(null)
 
@@ -45,7 +40,6 @@ export default function UserPage() {
   const [gpsCoords, setGpsCoords] = useState<{ latitude: number; longitude: number }>({ latitude: -6.2, longitude: 106.8 })
 
   const [showManual, setShowManual] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
   const [showOvertime, setShowOvertime] = useState(false)
 
   const updateQueueStats = useCallback(async () => {
@@ -65,7 +59,6 @@ export default function UserPage() {
 
   const fetchWorkersAndLogs = useCallback(async () => {
     if (!projectId) return
-    setHistoryLoading(true)
     try {
       const { data: wData, error: wError } = await supabase
         .from('workers')
@@ -87,11 +80,6 @@ export default function UserPage() {
       const now = new Date()
       const rangeStart = new Date(now)
       rangeStart.setHours(0, 0, 0, 0)
-      if (historyPeriod === 'week') {
-        rangeStart.setDate(rangeStart.getDate() - 6)
-      } else if (historyPeriod === 'month') {
-        rangeStart.setDate(1)
-      }
 
       const { data: attData, error: attError } = await supabase
         .from('attendance')
@@ -142,10 +130,8 @@ export default function UserPage() {
       setLogs([...remoteLogs, ...queuedLogs])
     } catch (err: unknown) {
       console.error(err instanceof Error ? err.message : 'Fetch error')
-    } finally {
-      setHistoryLoading(false)
     }
-  }, [historyPeriod, projectId])
+  }, [projectId])
 
   const syncQueueManually = useCallback(async () => {
     if (!navigator.onLine || isSyncing) return
@@ -432,48 +418,6 @@ export default function UserPage() {
     return () => { supabase.removeChannel(channel) }
   }, [projectId, fetchWorkersAndLogs])
 
-  // Build attendance pairs for table
-  const attendancePairs: HistoryAttendancePair[] = (() => {
-    const map = new Map<string, HistoryAttendancePair>()
-    for (const log of logs) {
-      if (!log.worker_id) continue
-      const occurredAt = new Date(log.occurred_at)
-      const localDate = [
-        occurredAt.getFullYear(),
-        String(occurredAt.getMonth() + 1).padStart(2, '0'),
-        String(occurredAt.getDate()).padStart(2, '0')
-      ].join('-')
-      const pairKey = `${log.worker_id}:${localDate}`
-      if (!map.has(pairKey)) {
-        map.set(pairKey, {
-          worker_id: log.worker_id,
-          local_date: localDate,
-          name: log.name,
-          nik: log.nik,
-          position: log.position,
-          clock_in: null,
-          clock_out: null,
-          status_day: 0,
-          method: log.source,
-          synced: log.synced
-        })
-      }
-      const pair = map.get(pairKey)!
-      const time = occurredAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-      if (log.type === 'in' && (!pair.clock_in || time < pair.clock_in)) {
-        pair.clock_in = time
-        if (pair.method !== log.source) pair.method = 'mixed'
-      }
-      if (log.type === 'out' && (!pair.clock_out || time > pair.clock_out)) {
-        pair.clock_out = time
-        if (pair.method !== log.source) pair.method = 'mixed'
-      }
-      pair.status_day = (pair.clock_in && pair.clock_out) ? 1.0 : (pair.clock_in || pair.clock_out) ? 0.5 : 0
-      if (!log.synced) pair.synced = false
-    }
-    return Array.from(map.values()).sort((a, b) => b.local_date.localeCompare(a.local_date) || a.name.localeCompare(b.name))
-  })()
-
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-6 text-slate-800">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -483,7 +427,7 @@ export default function UserPage() {
           queuedCount={queuedCount}
           isSyncing={isSyncing}
           onSyncQueue={syncQueueManually}
-          onHistoryClick={() => setShowHistory(!showHistory)}
+          onHistoryClick={() => router.push('/user/history')}
           onOvertimeClick={() => setShowOvertime(true)}
         />
 
@@ -547,15 +491,6 @@ export default function UserPage() {
           )}
         </div>
 
-        {/* Today Attendance Table */}
-        {(showHistory || attendancePairs.length > 0) && (
-          <TodayAttendanceTable
-            pairs={attendancePairs}
-            loading={historyLoading}
-            period={historyPeriod}
-            onPeriodChange={setHistoryPeriod}
-          />
-        )}
       </div>
 
       {/* Modals */}

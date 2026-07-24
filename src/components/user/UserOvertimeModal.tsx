@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Camera, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { UserWorker } from '@/types/user'
+import { blobToBase64, compressEvidenceImage } from '@/lib/image-compression'
 
 interface Props {
   isOpen: boolean
@@ -14,20 +15,12 @@ interface Props {
   workers: UserWorker[]
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
-    reader.onerror = () => reject(new Error('Gagal membaca foto bukti'))
-    reader.readAsDataURL(file)
-  })
-}
-
 export default function UserOvertimeModal({ isOpen, onClose, onSubmitted, projectId, projectName, workers }: Props) {
   const [workDate, setWorkDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }))
   const [hours, setHours] = useState(1.5)
   const [workerIds, setWorkerIds] = useState<string[]>([])
-  const [evidence, setEvidence] = useState<File | null>(null)
+  const [evidence, setEvidence] = useState<File[]>([])
+  const [description, setDescription] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -35,7 +28,8 @@ export default function UserOvertimeModal({ isOpen, onClose, onSubmitted, projec
     setWorkDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }))
     setHours(1.5)
     setWorkerIds([])
-    setEvidence(null)
+    setEvidence([])
+    setDescription('')
     setError(null)
     onClose()
   }
@@ -53,11 +47,11 @@ export default function UserOvertimeModal({ isOpen, onClose, onSubmitted, projec
       const { data, error: sessionError } = await supabase.auth.getSession()
       const token = data.session?.access_token
       if (sessionError || !token) throw new Error('Sesi tidak valid. Silakan login ulang.')
-      const evidenceBase64 = evidence ? await fileToBase64(evidence) : undefined
+      const evidenceBase64 = await Promise.all(evidence.map(async file => blobToBase64(await compressEvidenceImage(file))))
       const response = await fetch('/api/overtime-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ projectId, workDate, hours, workerIds, evidenceBase64 })
+        body: JSON.stringify({ projectId, workDate, hours, workerIds, evidenceBase64, description: description.trim() || undefined })
       })
       const result = await response.json() as { error?: string }
       if (!response.ok) throw new Error(result.error || 'Gagal mengirim pengajuan lembur')
@@ -87,6 +81,9 @@ export default function UserOvertimeModal({ isOpen, onClose, onSubmitted, projec
               <input type="number" min="0.5" max="24" step="0.5" required value={hours} onChange={(e) => setHours(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-normal" />
             </label>
           </div>
+          <label className="block text-sm font-semibold text-slate-700">Keterangan (opsional)
+            <textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={500} rows={3} placeholder="Contoh: penyelesaian pengecoran area A" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-normal" />
+          </label>
           <div>
             <div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Pekerja Aktif</span><span className="text-xs text-slate-500">{workerIds.length} dipilih</span></div>
             <div className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-3">
@@ -98,9 +95,9 @@ export default function UserOvertimeModal({ isOpen, onClose, onSubmitted, projec
               ))}
             </div>
           </div>
-          <label className="block text-sm font-semibold text-slate-700">Foto Bukti (opsional)
-            <span className="mt-1 flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-normal text-slate-500"><Camera className="h-4 w-4" />{evidence?.name || 'Ambil foto atau pilih file'}</span>
-            <input type="file" accept="image/jpeg,image/png" capture="environment" onChange={(e) => setEvidence(e.target.files?.[0] || null)} className="mt-2 w-full text-xs text-slate-500" />
+          <label className="block text-sm font-semibold text-slate-700">Foto Bukti (opsional, maksimal 5)
+            <span className="mt-1 flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-normal text-slate-500"><Camera className="h-4 w-4" />{evidence.length ? `${evidence.length} foto dipilih` : 'Ambil foto atau pilih beberapa file'}</span>
+            <input type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(e) => setEvidence(Array.from(e.target.files || []).slice(0, 5))} className="mt-2 w-full text-xs text-slate-500" />
           </label>
           <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
             <button type="button" onClick={closeModal} disabled={submitting} className="rounded-xl bg-slate-100 px-5 py-2.5 text-sm font-semibold text-slate-700">Batal</button>
