@@ -131,14 +131,17 @@ export async function POST(req: NextRequest) {
         const offsetHours = await getProjectTimezoneOffset(client, payload.project_id)
         const { startUtcStr, endUtcStr } = getProjectLocalDayBoundaries(payload.occurred_at, offsetHours)
 
-        const { data: duplicateCheck, error: dupErr } = await client
+        const { data: duplicateRows, error: dupErr } = await client
           .from('attendance')
-          .select('id')
+          .select('id, status')
+          .eq('project_id', payload.project_id)
           .eq('worker_id', payload.worker_id)
           .eq('type', payload.type)
+          .neq('status', 'rejected')
           .gte('occurred_at', startUtcStr)
           .lte('occurred_at', endUtcStr)
-          .maybeSingle()
+          .order('occurred_at', { ascending: true })
+          .limit(1)
 
         if (dupErr) {
           // Cleanup uploaded photo on db error
@@ -149,6 +152,7 @@ export async function POST(req: NextRequest) {
 
         let dbStatus: 'approved' | 'pending_approval' | 'rejected' = 'approved'
         let conflictOfId: string | null = null
+        const duplicateCheck = duplicateRows?.[0] || null
 
         if (duplicateCheck) {
           dbStatus = 'pending_approval'
