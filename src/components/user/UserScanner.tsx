@@ -124,7 +124,19 @@ export default function UserScanner({
     } catch (error: unknown) {
       setModelLoading(false)
       playBeepError()
-      setMatchResult({ success: false, message: error instanceof Error ? error.message : 'Kamera atau model wajah gagal dimuat.' })
+      let message = 'Kamera atau model wajah gagal dimuat.'
+      if (error instanceof DOMException) {
+        if (error.name === 'NotAllowedError') {
+          message = 'Izin kamera ditolak. Buka pengaturan browser dan izinkan akses kamera.'
+        } else if (error.name === 'NotFoundError') {
+          message = 'Kamera tidak ditemukan di perangkat ini.'
+        } else if (error.name === 'NotReadableError') {
+          message = 'Kamera sedang digunakan aplikasi lain. Tutup aplikasi lain lalu coba lagi.'
+        } else if (error.name === 'SecurityError') {
+          message = 'Akses kamera hanya bisa via HTTPS. Gunakan https:// di URL atau deploy ke Netlify.'
+        }
+      }
+      setMatchResult({ success: false, message })
     }
   }, [attemptMatch, workers])
 
