@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { UserPlus, List, Wifi, WifiOff, Clock, Clock3 } from 'lucide-react'
+import { UserPlus, List, Wifi, WifiOff, Clock, Clock3, RefreshCw } from 'lucide-react'
 
 interface UserHeaderProps {
   projectName: string
   isOnline: boolean
   queuedCount: number
   isRegisterPage?: boolean
+  isSyncing?: boolean
+  onSyncQueue?: () => void
   onHistoryClick: () => void
   onOvertimeClick: () => void
 }
@@ -26,7 +28,7 @@ function getWIBTime(date: Date): string {
   })
 }
 
-export default function UserHeader({ projectName, isOnline, queuedCount, isRegisterPage = false, onHistoryClick, onOvertimeClick }: UserHeaderProps) {
+export default function UserHeader({ projectName, isOnline, queuedCount, isRegisterPage = false, isSyncing = false, onSyncQueue, onHistoryClick, onOvertimeClick }: UserHeaderProps) {
   const [timeStr, setTimeStr] = useState('')
 
   useEffect(() => {
@@ -66,6 +68,16 @@ export default function UserHeader({ projectName, isOnline, queuedCount, isRegis
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {queuedCount > 0 && onSyncQueue && (
+            <button
+              onClick={onSyncQueue}
+              disabled={!isOnline || isSyncing}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Menyinkronkan...' : `Sinkronkan ${queuedCount} Antrean`}
+            </button>
+          )}
           <button
             onClick={onOvertimeClick}
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-amber-400 to-amber-500 px-4 py-2.5 text-sm font-semibold text-amber-950 shadow-sm shadow-amber-900/30 transition hover:from-amber-300 hover:to-amber-400 active:scale-[0.98]"

@@ -35,6 +35,7 @@ export default function UserPage() {
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const [isOnline, setIsOnline] = useState(true)
   const [queuedCount, setQueuedCount] = useState(0)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('day')
   const [historyLoading, setHistoryLoading] = useState(false)
   const [permissionReady, setPermissionReady] = useState(false)
@@ -145,6 +146,29 @@ export default function UserPage() {
       setHistoryLoading(false)
     }
   }, [historyPeriod, projectId])
+
+  const syncQueueManually = useCallback(async () => {
+    if (!navigator.onLine || isSyncing) return
+    setErrorMsg(null)
+    setStatusMsg(null)
+    setIsSyncing(true)
+    try {
+      const result = await startBackgroundSync()
+      await updateQueueStats()
+      await fetchWorkersAndLogs()
+      if (result.synced > 0) {
+        setStatusMsg(`${result.synced} absensi berhasil disinkronkan ke server${result.failed ? `, ${result.failed} masih gagal` : ''}.`)
+      } else if (result.failed > 0) {
+        setErrorMsg(`${result.failed} antrean gagal disinkronkan. Periksa sesi, lokasi, atau status pekerja lalu coba lagi.`)
+      } else {
+        setStatusMsg('Tidak ada antrean yang perlu disinkronkan.')
+      }
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Sinkronisasi antrean gagal.')
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [fetchWorkersAndLogs, isSyncing, updateQueueStats])
 
   const getGpsLocation = useCallback((): Promise<{ latitude: number; longitude: number }> => {
     return new Promise((resolve, reject) => {
@@ -457,6 +481,8 @@ export default function UserPage() {
           projectName={projectName}
           isOnline={isOnline}
           queuedCount={queuedCount}
+          isSyncing={isSyncing}
+          onSyncQueue={syncQueueManually}
           onHistoryClick={() => setShowHistory(!showHistory)}
           onOvertimeClick={() => setShowOvertime(true)}
         />
