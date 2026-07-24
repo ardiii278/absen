@@ -56,44 +56,20 @@ export default function DuplicateReconciliationModal({ duplicate, onClose, onRes
     setErrorMsg(null)
 
     try {
-      const userRes = await supabase.auth.getUser()
-      const actorId = userRes.data.user?.id || null
-
-      for (const record of duplicate.records) {
-        if (record.id === selectedValidId) {
-          const { error } = await supabase
-            .from('attendance')
-            .update({ status: 'approved', conflict_of: null })
-            .eq('id', record.id)
-          if (error) throw error
-
-          await supabase.from('audit_logs').insert({
-            actor_id: actorId,
-            entity_type: 'attendance',
-            entity_id: record.id,
-            action: 'RESOLVED_DUPLICATE_VALID',
-            reason: reason,
-            old_data: { status: record.status, conflict_of: record.conflict_of },
-            new_data: { status: 'approved', conflict_of: null }
-          })
-        } else {
-          const { error } = await supabase
-            .from('attendance')
-            .update({ status: 'rejected' })
-            .eq('id', record.id)
-          if (error) throw error
-
-          await supabase.from('audit_logs').insert({
-            actor_id: actorId,
-            entity_type: 'attendance',
-            entity_id: record.id,
-            action: 'RESOLVED_DUPLICATE_INVALID',
-            reason: reason,
-            old_data: { status: record.status },
-            new_data: { status: 'rejected' }
-          })
-        }
-      }
+      const session = await supabase.auth.getSession()
+      const token = session.data.session?.access_token
+      if (!token) throw new Error('Sesi admin berakhir. Silakan login ulang.')
+      const response = await fetch('/api/attendance/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          recordIds: duplicate.records.map(record => record.id),
+          selectedValidId,
+          reason
+        })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Gagal menyelesaikan duplikat')
 
       onResolved()
       onClose()
@@ -123,7 +99,7 @@ export default function DuplicateReconciliationModal({ duplicate, onClose, onRes
 
       <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 text-xs rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 shrink-0" />
-        <span>Ditemukan <strong>{duplicate.records.length} record</strong> absensi pada tanggal yang sama. Pilih record yang valid, lainnya akan ditolak otomatis.</span>
+        <span>Ditemukan <strong>{duplicate.records.length} record {duplicate.records[0]?.type === 'in' ? 'MASUK' : 'PULANG'}</strong> pada tanggal yang sama. Pilih satu yang valid, lainnya akan ditolak otomatis.</span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -221,9 +197,9 @@ export function findDuplicates(records: AttendanceRecord[]): DuplicateGroup[] {
   const groups = new Map<string, AttendanceRecord[]>()
 
   for (const record of records) {
-    if (!record.worker_id || !record.occurred_at) continue
+    if (!record.worker_id || !record.occurred_at || !record.type || record.status === 'rejected') continue
     const dateStr = new Date(record.occurred_at).toISOString().split('T')[0]
-    const key = `${record.worker_id}_${dateStr}`
+    const key = `${record.worker_id}_${dateStr}_${record.type}`
     if (!groups.has(key)) {
       groups.set(key, [])
     }
