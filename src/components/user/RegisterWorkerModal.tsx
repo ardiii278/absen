@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Camera, CheckCircle } from 'lucide-react'
+import { Camera, CheckCircle, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { extractDescriptorFromBlob } from '@/lib/face/api'
 import Modal from '@/components/ui/Modal'
@@ -21,6 +21,7 @@ export default function RegisterWorkerModal({ isOpen, onClose, projectId }: Regi
   const [ktpPhoto, setKtpPhoto] = useState<string | null>(null)
   const [cameraActive, setCameraActive] = useState(false)
   const [photoType, setPhotoType] = useState<'profile' | 'ktp' | null>(null)
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
@@ -55,14 +56,38 @@ export default function RegisterWorkerModal({ isOpen, onClose, projectId }: Regi
 
   const startCamera = async (type: 'profile' | 'ktp') => {
     setPhotoType(type)
-    setCameraActive(true)
+    const mode = type === 'profile' ? 'user' : 'environment'
+    setFacingMode(mode)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: mode },
+        audio: false
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        setCameraActive(true)
+      }
+    } catch {
+      setErrorMsg('Gagal mengakses kamera. Pastikan HTTPS dan izin aktif.')
+      setCameraActive(false)
+    }
+  }
+
+  const switchCamera = async () => {
+    if (!streamRef.current) return
+    streamRef.current.getTracks().forEach(t => t.stop())
+    const newMode: 'user' | 'environment' = facingMode === 'user' ? 'environment' : 'user'
+    setFacingMode(newMode)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: newMode },
+        audio: false
+      })
       streamRef.current = stream
       if (videoRef.current) videoRef.current.srcObject = stream
     } catch {
-      setErrorMsg('Gagal mengakses kamera.')
-      setCameraActive(false)
+      setErrorMsg('Gagal beralih kamera.')
     }
   }
 
@@ -111,17 +136,17 @@ export default function RegisterWorkerModal({ isOpen, onClose, projectId }: Regi
 
       const profileBlob = dataURLtoBlob(profilePhoto)
       const ktpBlob = dataURLtoBlob(ktpPhoto)
-      const faceDescriptor = await extractDescriptorFromBlob(profileBlob)
       const ts = Date.now()
 
-      const { data: profUpload, error: profErr } = await supabase.storage
-        .from('kiosk-photos').upload(`temp/profile_${nik}_${ts}.jpg`, profileBlob, { contentType: 'image/jpeg' })
-      if (profErr || !profUpload) throw new Error('Gagal upload foto profil.')
+      const [faceDescriptor, profResult, ktpResult] = await Promise.all([
+        extractDescriptorFromBlob(profileBlob),
+        supabase.storage.from('kiosk-photos').upload(`temp/profile_${nik}_${ts}.jpg`, profileBlob, { contentType: 'image/jpeg' }),
+        supabase.storage.from('kiosk-photos').upload(`temp/ktp_${nik}_${ts}.jpg`, ktpBlob, { contentType: 'image/jpeg' })
+      ])
 
-      const { data: ktpUpload, error: ktpErr } = await supabase.storage
-        .from('kiosk-photos').upload(`temp/ktp_${nik}_${ts}.jpg`, ktpBlob, { contentType: 'image/jpeg' })
-      if (ktpErr || !ktpUpload) {
-        await supabase.storage.from('kiosk-photos').remove([profUpload.path])
+      if (profResult.error || !profResult.data) throw new Error('Gagal upload foto profil.')
+      if (ktpResult.error || !ktpResult.data) {
+        await supabase.storage.from('kiosk-photos').remove([profResult.data.path])
         throw new Error('Gagal upload foto KTP.')
       }
 
@@ -129,15 +154,15 @@ export default function RegisterWorkerModal({ isOpen, onClose, projectId }: Regi
         nik, name, position,
         job_scope: jobScope,
         project_id: projectId,
-        profile_path: profUpload.path,
-        ktp_private_path: ktpUpload.path,
+        profile_path: profResult.data.path,
+        ktp_private_path: ktpResult.data.path,
         face_descriptor: faceDescriptor,
         status: 'pending_approval',
         is_active: false,
         daily_wage: position === 'TK' ? 150000 : 250000
       })
       if (insertErr) {
-        await supabase.storage.from('kiosk-photos').remove([profUpload.path, ktpUpload.path])
+        await supabase.storage.from('kiosk-photos').remove([profResult.data.path, ktpResult.data.path])
         throw insertErr
       }
 
@@ -231,10 +256,18 @@ export default function RegisterWorkerModal({ isOpen, onClose, projectId }: Regi
           <div className="bg-white rounded-2xl p-6 max-w-lg w-full flex flex-col items-center">
             <h3 className="text-lg font-bold text-slate-800 mb-4">
               Ambil Foto {photoType === 'profile' ? 'Profil Wajah' : 'KTP'}
+              <span className="text-xs font-normal text-slate-400 ml-2">
+                {facingMode === 'user' ? '(depan)' : '(belakang)'}
+              </span>
             </h3>
-            <div className="aspect-video w-full bg-black rounded-xl overflow-hidden mb-4">
+            <div className="aspect-video w-full bg-black rounded-xl overflow-hidden mb-3">
               <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
             </div>
+            <button onClick={switchCamera}
+              className="mb-4 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition flex items-center gap-2">
+              <RefreshCw className="w-3.5 h-3.5" />
+              Ganti Kamera {facingMode === 'user' ? 'Belakang' : 'Depan'}
+            </button>
             <div className="flex gap-4 w-full">
               <button onClick={capturePhoto}
                 className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-semibold transition">
