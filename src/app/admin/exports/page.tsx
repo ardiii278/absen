@@ -10,6 +10,13 @@ interface Project {
 
 type DateRangePreset = 'custom' | 'today' | 'week' | 'month'
 
+interface FileSaveTarget {
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>
+    close: () => Promise<void>
+  }>
+}
+
 export default function ExportsPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState('')
@@ -93,7 +100,26 @@ export default function ExportsPage() {
 
   const selectionKey = `${selectedProjectId}|${selectedJobScope}|${startDate}|${endDate}`
 
-  const downloadResponse = async (res: Response, filename: string) => {
+  const prepareSaveTarget = async (filename: string, mimeType: string): Promise<FileSaveTarget | null> => {
+    const picker = (window as typeof window & {
+      showSaveFilePicker?: (options: {
+        suggestedName: string
+        types: { description: string; accept: Record<string, string[]> }[]
+      }) => Promise<FileSaveTarget>
+    }).showSaveFilePicker
+    if (!picker) return null
+
+    const extension = filename.toLowerCase().endsWith('.zip') ? '.zip' : '.xlsx'
+    return picker({
+      suggestedName: filename,
+      types: [{
+        description: extension === '.zip' ? 'Arsip ZIP' : 'Microsoft Excel',
+        accept: { [mimeType]: [extension] }
+      }]
+    })
+  }
+
+  const downloadResponse = async (res: Response, filename: string, saveTarget: FileSaveTarget | null) => {
     if (!res.ok) {
       const contentType = res.headers.get('content-type') || ''
       if (contentType.includes('application/json')) {
@@ -127,6 +153,14 @@ export default function ExportsPage() {
             ? 'application/zip'
             : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         })
+
+    if (saveTarget) {
+      const writable = await saveTarget.createWritable()
+      await writable.write(typedBlob)
+      await writable.close()
+      return
+    }
+
     const url = window.URL.createObjectURL(typedBlob)
     const a = document.createElement('a')
     a.href = url
@@ -147,6 +181,8 @@ export default function ExportsPage() {
     setErrorMsg(null)
     setSuccessMsg(null)
     try {
+      const filename = `rekap_absen_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`
+      const saveTarget = await prepareSaveTarget(filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       const token = await getToken()
       const res = await fetch('/api/export', {
         method: 'POST',
@@ -162,9 +198,10 @@ export default function ExportsPage() {
         })
       })
 
-      await downloadResponse(res, `rekap_absen_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`)
+      await downloadResponse(res, filename, saveTarget)
       setSuccessMsg('Rekap Excel berhasil diunduh.')
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       const msg = err instanceof Error ? err.message : 'Gagal ekspor Excel'
       setErrorMsg(msg)
     } finally {
@@ -178,6 +215,8 @@ export default function ExportsPage() {
     setErrorMsg(null)
     setSuccessMsg(null)
     try {
+      const filename = `absen_harian_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`
+      const saveTarget = await prepareSaveTarget(filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       const token = await getToken()
       const res = await fetch('/api/export-daily', {
         method: 'POST',
@@ -193,9 +232,10 @@ export default function ExportsPage() {
         })
       })
 
-      await downloadResponse(res, `absen_harian_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`)
+      await downloadResponse(res, filename, saveTarget)
       setSuccessMsg('Absen harian dengan foto berhasil diunduh.')
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       const msg = err instanceof Error ? err.message : 'Gagal ekspor absen harian'
       setErrorMsg(msg)
     } finally {
@@ -209,6 +249,8 @@ export default function ExportsPage() {
     setErrorMsg(null)
     setSuccessMsg(null)
     try {
+      const filename = `backup_bukti_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.zip`
+      const saveTarget = await prepareSaveTarget(filename, 'application/zip')
       const token = await getToken()
       const res = await fetch('/api/backup', {
         method: 'POST',
@@ -224,12 +266,13 @@ export default function ExportsPage() {
         })
       })
 
-      await downloadResponse(res, `backup_bukti_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.zip`)
+      await downloadResponse(res, filename, saveTarget)
 
       setBackupVerified(true)
       setBackupSelection(selectionKey)
       setSuccessMsg('Backup ZIP berhasil diunduh untuk pilihan data saat ini.')
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       const msg = err instanceof Error ? err.message : 'Gagal ekspor ZIP'
       setErrorMsg(msg)
     } finally {
