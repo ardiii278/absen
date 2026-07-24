@@ -497,7 +497,8 @@ export async function POST(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename=backup_bukti_${projectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}.zip`
+        'Content-Disposition': `attachment; filename="backup_bukti_${projectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.zip"`,
+        'Cache-Control': 'no-store'
       }
     })
   } catch (err: unknown) {

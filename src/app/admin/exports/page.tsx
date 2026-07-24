@@ -104,14 +104,41 @@ export default function ExportsPage() {
     }
     const blob = await res.blob()
     if (!blob.size) throw new Error('File ekspor kosong.')
-    const url = window.URL.createObjectURL(blob)
+
+    const disposition = res.headers.get('content-disposition') || ''
+    const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+    const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+    let resolvedFilename = filename
+    try {
+      resolvedFilename = encodedName ? decodeURIComponent(encodedName) : plainName || filename
+    } catch {
+      resolvedFilename = filename
+    }
+    resolvedFilename = resolvedFilename.replace(/[\\/:*?"<>|]/g, '_')
+    const expectedExtension = filename.toLowerCase().endsWith('.zip') ? '.zip' : '.xlsx'
+    if (!resolvedFilename.toLowerCase().endsWith(expectedExtension)) {
+      resolvedFilename += expectedExtension
+    }
+
+    const typedBlob = blob.type
+      ? blob
+      : new Blob([blob], {
+          type: expectedExtension === '.zip'
+            ? 'application/zip'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        })
+    const url = window.URL.createObjectURL(typedBlob)
     const a = document.createElement('a')
     a.href = url
-    a.download = filename
+    a.download = resolvedFilename
+    a.rel = 'noopener'
+    a.style.display = 'none'
     document.body.appendChild(a)
     a.click()
-    a.remove()
-    window.URL.revokeObjectURL(url)
+    window.setTimeout(() => {
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    }, 60_000)
   }
 
   const handleExportExcel = async () => {
