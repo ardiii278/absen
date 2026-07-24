@@ -13,6 +13,7 @@ type DateRangePreset = 'custom' | 'today' | 'week' | 'month'
 export default function ExportsPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState('')
+  const selectedProjectName = projects.find(p => p.id === selectedProjectId)?.name ?? ''
   const [jobScopes, setJobScopes] = useState<string[]>([])
   const [selectedJobScope, setSelectedJobScope] = useState('')
   
@@ -117,7 +118,7 @@ export default function ExportsPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `rekap_absen_${selectedProjectId}_${startDate}_${endDate}.xlsx`
+      a.download = `rekap_absen_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -160,7 +161,7 @@ export default function ExportsPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `absen_harian_${selectedProjectId}_${startDate}_${endDate}.xlsx`
+      a.download = `absen_harian_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -203,7 +204,7 @@ export default function ExportsPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `backup_bukti_${selectedProjectId}_${startDate}_${endDate}.zip`
+      a.download = `backup_bukti_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.zip`
       document.body.appendChild(a)
       a.click()
       a.remove()

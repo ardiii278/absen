@@ -222,7 +222,7 @@ export async function POST(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename=absen_harian_${projectId}_${startDate}_${endDate}.xlsx`
+        'Content-Disposition': `attachment; filename=absen_harian_${projectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`
       }
     })
   } catch (err: unknown) {

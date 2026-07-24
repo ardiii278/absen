@@ -453,7 +453,7 @@ export async function POST(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename=rekap_absen_${projectId}.xlsx`
+        'Content-Disposition': `attachment; filename=rekap_absen_${projectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}.xlsx`
       }
     })
   } catch (err: unknown) {
