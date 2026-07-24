@@ -141,40 +141,33 @@ export default function RegisterWorkerModal({ isOpen, onClose, projectId, isInli
 
     setLoading(true)
     try {
-      const { data: existing } = await supabase.from('workers').select('id').eq('nik', nik).maybeSingle()
-      if (existing) throw new Error('NIK sudah terdaftar.')
-
       const profileBlob = dataURLtoBlob(profilePhoto)
-      const ktpBlob = dataURLtoBlob(ktpPhoto)
-      const ts = Date.now()
-
-      const [faceDescriptor, profResult, ktpResult] = await Promise.all([
+      const [faceDescriptor, sessionResult] = await Promise.all([
         extractDescriptorFromBlob(profileBlob),
-        supabase.storage.from('kiosk-photos').upload(`temp/profile_${nik}_${ts}.jpg`, profileBlob, { contentType: 'image/jpeg' }),
-        supabase.storage.from('kiosk-photos').upload(`temp/ktp_${nik}_${ts}.jpg`, ktpBlob, { contentType: 'image/jpeg' })
+        supabase.auth.getSession()
       ])
+      const token = sessionResult.data.session?.access_token
+      if (!token) throw new Error('Sesi login berakhir. Silakan login ulang.')
 
-      if (profResult.error || !profResult.data) throw new Error('Gagal upload foto profil.')
-      if (ktpResult.error || !ktpResult.data) {
-        await supabase.storage.from('kiosk-photos').remove([profResult.data.path])
-        throw new Error('Gagal upload foto KTP.')
-      }
-
-      const { error: insertErr } = await supabase.from('workers').insert({
-        nik, name, position,
-        job_scope: jobScope,
-        project_id: projectId,
-        profile_path: profResult.data.path,
-        ktp_private_path: ktpResult.data.path,
-        face_descriptor: faceDescriptor,
-        status: 'pending_approval',
-        is_active: false,
-        daily_wage: position === 'TK' ? 150000 : 250000
+      const response = await fetch('/api/register-worker', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          nik,
+          name,
+          position,
+          jobScope,
+          projectId,
+          faceDescriptor,
+          profileImage: profilePhoto,
+          ktpImage: ktpPhoto
+        })
       })
-      if (insertErr) {
-        await supabase.storage.from('kiosk-photos').remove([profResult.data.path, ktpResult.data.path])
-        throw insertErr
-      }
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Gagal menyimpan pendaftaran pekerja.')
 
       setSuccessMsg('Registrasi berhasil! Menunggu verifikasi Admin.')
     } catch (err: unknown) {
