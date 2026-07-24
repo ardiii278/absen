@@ -115,11 +115,22 @@ export default function UserScanner({
         audio: false
       })
       streamRef.current = stream
-      if (videoRef.current) videoRef.current.srcObject = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        try { await videoRef.current.play() } catch {}
+      }
       deadlineRef.current = Date.now() + 10000
       setTimeRemaining(10)
       setCameraActive(true)
       setModelLoading(false)
+
+      await new Promise<void>(resolve => {
+        const video = videoRef.current
+        if (!video) return resolve()
+        if (video.readyState >= 2) return resolve()
+        const onReady = () => { video.removeEventListener('loadeddata', onReady); resolve() }
+        video.addEventListener('loadeddata', onReady, { once: true })
+      })
       scanIntervalRef.current = setInterval(attemptMatch, 700)
     } catch (error: unknown) {
       setModelLoading(false)

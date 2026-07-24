@@ -301,12 +301,20 @@ export default function UserPage() {
     if (!projectId) return
     const t = setTimeout(async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false })
-        stream.getTracks().forEach(track => track.stop())
-        setPermissionReady(true)
-        setPermissionStatus('Kamera siap digunakan')
+        const status = await navigator.permissions.query({ name: 'camera' as PermissionName })
+        if (status.state === 'granted') {
+          setPermissionReady(true)
+          setPermissionStatus('Kamera siap digunakan')
+        } else if (status.state === 'prompt') {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false })
+          stream.getTracks().forEach(track => track.stop())
+          setPermissionReady(true)
+          setPermissionStatus('Kamera siap digunakan')
+        } else {
+          setPermissionStatus('Izin kamera belum diberikan — klik tombol absen untuk mengaktifkan')
+        }
       } catch {
-        setPermissionStatus('Izin kamera belum diberikan — klik tombol absen untuk mengaktifkan')
+        setPermissionStatus('Klik tombol absen untuk mengaktifkan kamera')
       }
 
       try {
