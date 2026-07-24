@@ -10,7 +10,6 @@ import { UserWorker, UserLogEntry, UserAttendancePair } from '@/types/user'
 import UserHeader from '@/components/user/UserHeader'
 import UserScanner from '@/components/user/UserScanner'
 import ManualAttendanceModal from '@/components/user/ManualAttendanceModal'
-import RegisterWorkerModal from '@/components/user/RegisterWorkerModal'
 import TodayAttendanceTable from '@/components/user/TodayAttendanceTable'
 import UserOvertimeModal from '@/components/user/UserOvertimeModal'
 
@@ -45,7 +44,6 @@ export default function UserPage() {
   const [gpsCoords, setGpsCoords] = useState<{ latitude: number; longitude: number }>({ latitude: -6.2, longitude: 106.8 })
 
   const [showManual, setShowManual] = useState(false)
-  const [showRegister, setShowRegister] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showOvertime, setShowOvertime] = useState(false)
 
@@ -454,7 +452,6 @@ export default function UserPage() {
           projectName={projectName}
           isOnline={isOnline}
           queuedCount={queuedCount}
-          onRegisterClick={() => setShowRegister(true)}
           onHistoryClick={() => setShowHistory(!showHistory)}
           onOvertimeClick={() => setShowOvertime(true)}
         />
@@ -542,10 +539,7 @@ export default function UserPage() {
       />
 
       {projectId && (
-        <>
-          <RegisterWorkerModal isOpen={showRegister} onClose={() => setShowRegister(false)} projectId={projectId} />
-          <UserOvertimeModal isOpen={showOvertime} onClose={() => setShowOvertime(false)} onSubmitted={setStatusMsg} projectId={projectId} projectName={projectName} workers={workers} />
-        </>
+        <UserOvertimeModal isOpen={showOvertime} onClose={() => setShowOvertime(false)} onSubmitted={setStatusMsg} projectId={projectId} projectName={projectName} workers={workers} />
       )}
     </div>
   )

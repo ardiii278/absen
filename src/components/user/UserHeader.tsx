@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { UserPlus, List, Wifi, WifiOff, Clock, Clock3 } from 'lucide-react'
 
 interface UserHeaderProps {
   projectName: string
   isOnline: boolean
   queuedCount: number
-  onRegisterClick: () => void
+  isRegisterPage?: boolean
   onHistoryClick: () => void
   onOvertimeClick: () => void
 }
@@ -25,7 +26,7 @@ function getWIBTime(date: Date): string {
   })
 }
 
-export default function UserHeader({ projectName, isOnline, queuedCount, onRegisterClick, onHistoryClick, onOvertimeClick }: UserHeaderProps) {
+export default function UserHeader({ projectName, isOnline, queuedCount, isRegisterPage = false, onHistoryClick, onOvertimeClick }: UserHeaderProps) {
   const [timeStr, setTimeStr] = useState('')
 
   useEffect(() => {
@@ -71,13 +72,23 @@ export default function UserHeader({ projectName, isOnline, queuedCount, onRegis
           >
             <Clock3 className="h-4 w-4" /> Pengajuan Lembur
           </button>
-          <button
-            onClick={onRegisterClick}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-semibold transition ring-1 ring-inset ring-white/20 active:scale-[0.98]"
-          >
-            <UserPlus className="w-4 h-4" />
-            Tambah Pekerja
-          </button>
+          {isRegisterPage ? (
+            <button
+              disabled
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/5 text-white/40 rounded-xl text-sm font-semibold ring-1 ring-inset ring-white/5 cursor-not-allowed"
+            >
+              <UserPlus className="w-4 h-4" />
+              Tambah Pekerja
+            </button>
+          ) : (
+            <Link
+              href="/user/register"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-semibold transition ring-1 ring-inset ring-white/20 active:scale-[0.98]"
+            >
+              <UserPlus className="w-4 h-4" />
+              Tambah Pekerja
+            </Link>
+          )}
           <button
             onClick={onHistoryClick}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-semibold transition ring-1 ring-inset ring-white/20 active:scale-[0.98]"

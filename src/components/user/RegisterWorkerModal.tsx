@@ -11,9 +11,10 @@ interface RegisterWorkerModalProps {
   isOpen: boolean
   onClose: () => void
   projectId: string
+  isInline?: boolean
 }
 
-export default function RegisterWorkerModal({ isOpen, onClose, projectId }: RegisterWorkerModalProps) {
+export default function RegisterWorkerModal({ isOpen, onClose, projectId, isInline = false }: RegisterWorkerModalProps) {
   const [nik, setNik] = useState('')
   const [name, setName] = useState('')
   const [position, setPosition] = useState<'TK' | 'KN'>('TK')
@@ -183,81 +184,97 @@ export default function RegisterWorkerModal({ isOpen, onClose, projectId }: Regi
     }
   }
 
+  const formContent = (
+    <div className={isInline ? "" : "animate-fade-up"}>
+      {errorMsg && <div className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-100">{errorMsg}</div>}
+      {successMsg && <div className="mb-4 p-3 bg-emerald-50 text-emerald-700 text-xs rounded-lg border border-emerald-100 flex items-center gap-2"><CheckCircle className="w-4 h-4" />{successMsg}</div>}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">NIK (16 Digit)</label>
+          <input type="text" maxLength={16} placeholder="1234567890123456"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            value={nik} onChange={e => setNik(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap</label>
+          <input type="text" placeholder="Nama sesuai KTP"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            value={name} onChange={e => setName(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">Jabatan</label>
+          <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            value={position} onChange={e => setPosition(e.target.value as 'TK' | 'KN')}>
+            <option value="TK">Tenaga Kerja (TK)</option>
+            <option value="KN">Kepala Regu (KN)</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">Job Scope</label>
+          <input type="text" placeholder="misal: HARDSCAPE"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            value={jobScope} onChange={e => setJobScope(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        {(['profile', 'ktp'] as const).map(type => (
+          <div key={type} className="flex flex-col items-center p-3 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+            <span className="text-xs font-semibold text-slate-700 mb-2">
+              {type === 'profile' ? 'Foto Profil Wajah' : 'Foto KTP'}
+            </span>
+            {(type === 'profile' ? profilePhoto : ktpPhoto) ? (
+              <div className="w-20 h-20 bg-emerald-50 rounded-lg flex items-center justify-center mb-2 border border-emerald-200">
+                <CheckCircle className="w-6 h-6 text-emerald-600" />
+              </div>
+            ) : (
+              <div className="w-20 h-20 bg-slate-100 rounded-lg flex items-center justify-center mb-2 border border-slate-200">
+                <Camera className="w-6 h-6 text-slate-400" />
+              </div>
+            )}
+            <button type="button" onClick={() => startCamera(type)}
+              className="px-3 py-1 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold shadow-sm border border-slate-200 transition">
+              Ambil Foto
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-3 pt-4 border-t border-slate-100">
+        <button onClick={handleSubmit} disabled={loading || !!successMsg}
+          className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-semibold transition disabled:opacity-50 shadow-sm shadow-emerald-800/10">
+          {loading ? 'Menyimpan...' : 'Kirim Registrasi'}
+        </button>
+        <button onClick={closeModal}
+          className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition">
+          Batal
+        </button>
+      </div>
+    </div>
+  )
+
   return (
     <>
-      <Modal
-        isOpen={isOpen && !cameraActive}
-        onClose={closeModal}
-        title="Registrasi Pekerja Baru"
-        subtitle="Data akan disimpan dengan status pending approval"
-        maxWidth="lg"
-      >
-        {errorMsg && <div className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-100">{errorMsg}</div>}
-        {successMsg && <div className="mb-4 p-3 bg-emerald-50 text-emerald-700 text-xs rounded-lg border border-emerald-100 flex items-center gap-2"><CheckCircle className="w-4 h-4" />{successMsg}</div>}
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">NIK (16 Digit)</label>
-            <input type="text" maxLength={16} placeholder="1234567890123456"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none"
-              value={nik} onChange={e => setNik(e.target.value)} />
+      {isInline ? (
+        <div className="w-full">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-slate-800">Registrasi Pekerja Baru</h2>
+            <p className="text-xs text-slate-500 mt-1">Data akan disimpan dengan status pending approval</p>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap</label>
-            <input type="text" placeholder="Nama sesuai KTP"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
-              value={name} onChange={e => setName(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Jabatan</label>
-            <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
-              value={position} onChange={e => setPosition(e.target.value as 'TK' | 'KN')}>
-              <option value="TK">Tenaga Kerja (TK)</option>
-              <option value="KN">Kepala Regu (KN)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Job Scope</label>
-            <input type="text" placeholder="misal: HARDSCAPE"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none"
-              value={jobScope} onChange={e => setJobScope(e.target.value)} />
-          </div>
+          {formContent}
         </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          {(['profile', 'ktp'] as const).map(type => (
-            <div key={type} className="flex flex-col items-center p-3 border border-dashed border-slate-200 rounded-xl">
-              <span className="text-xs font-semibold text-slate-700 mb-2">
-                {type === 'profile' ? 'Foto Profil Wajah' : 'Foto KTP'}
-              </span>
-              {(type === 'profile' ? profilePhoto : ktpPhoto) ? (
-                <div className="w-20 h-20 bg-emerald-50 rounded-lg flex items-center justify-center mb-2">
-                  <CheckCircle className="w-6 h-6 text-emerald-600" />
-                </div>
-              ) : (
-                <div className="w-20 h-20 bg-slate-100 rounded-lg flex items-center justify-center mb-2">
-                  <Camera className="w-6 h-6 text-slate-400" />
-                </div>
-              )}
-              <button type="button" onClick={() => startCamera(type)}
-                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition">
-                Ambil Foto
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex gap-3 pt-4 border-t border-slate-100">
-          <button onClick={handleSubmit} disabled={loading || !!successMsg}
-            className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-semibold transition disabled:opacity-50">
-            {loading ? 'Menyimpan...' : 'Kirim Registrasi'}
-          </button>
-          <button onClick={closeModal}
-            className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition">
-            Batal
-          </button>
-        </div>
-      </Modal>
+      ) : (
+        <Modal
+          isOpen={isOpen && !cameraActive}
+          onClose={closeModal}
+          title="Registrasi Pekerja Baru"
+          subtitle="Data akan disimpan dengan status pending approval"
+          maxWidth="lg"
+        >
+          {formContent}
+        </Modal>
+      )}
 
       {/* Camera Modal */}
       {cameraActive && (
