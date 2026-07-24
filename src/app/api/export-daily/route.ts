@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
+import { loadImage } from 'canvas'
 import { createServiceClient, verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, getProjectDateRangeBoundaries, createAuditLog, logServerError } from '@/lib/server-auth'
-
-function formatLocalTime(utcTimeStr: string, offsetHours: number): string {
-  const ms = new Date(utcTimeStr).getTime() + (offsetHours * 60 * 60 * 1000)
-  const d = new Date(ms)
-  return d.toISOString().substring(11, 16)
-}
 import { supabase } from '@/lib/supabase'
 import { exportRequestSchema } from '@/lib/validators'
+
+function escapeFormula(val: string): string {
+  if (!val) return ''
+  if (val.startsWith('=') || val.startsWith('+') || val.startsWith('-') || val.startsWith('@')) {
+    return `'${val}`
+  }
+  return val
+}
 
 interface AttendanceRecord {
   id: string
@@ -116,148 +119,106 @@ export async function POST(req: NextRequest) {
     const workbook = new ExcelJS.Workbook()
     const worksheet = workbook.addWorksheet('Absensi Harian')
 
-    const titleRow = worksheet.addRow(['REKAP ABSENSI HARIAN'])
+    // Header
     worksheet.mergeCells('A1:F1')
     const titleCell = worksheet.getCell('A1')
     titleCell.value = `REKAP ABSENSI HARIAN - ${projectName.toUpperCase()}${jobScope ? ` (JOB SCOPE: ${jobScope.toUpperCase()})` : ''}`
-    titleCell.font = { size: 14, bold: true, color: { argb: 'FF1E293B' } }
+    titleCell.font = { size: 13, bold: true }
     titleCell.alignment = { horizontal: 'center' }
-    titleRow.height = 28
 
-    const infoRow = worksheet.addRow([`Periode: ${startDate} s/d ${endDate} | Masuk: ${masukCount} | Pulang: ${pulangCount}`])
     worksheet.mergeCells('A2:F2')
     const infoCell = worksheet.getCell('A2')
-    infoCell.font = { italic: true, size: 9, color: { argb: 'FF64748B' } }
+    infoCell.value = `Periode: ${startDate} s/d ${endDate} | Masuk: ${masukCount} | Pulang: ${pulangCount}`
+    infoCell.font = { italic: true, size: 10 }
     infoCell.alignment = { horizontal: 'center' }
-    infoRow.height = 22
 
-    const spacerRow = worksheet.addRow([])
-    spacerRow.height = 8
+    // Column headers
+    worksheet.addRow(['No', 'Tanggal', 'Jam', 'Nama Pekerja', 'Tipe', 'Foto Bukti'])
 
-    const COL_WIDTHS = [4.5, 12, 10, 24, 28, 28]
-    for (let c = 0; c < 6; c++) worksheet.getColumn(c + 1).width = COL_WIDTHS[c]
+    const headerRow = worksheet.getRow(3)
+    headerRow.font = { bold: true, size: 10 }
+    headerRow.height = 22
 
-    const SECTION_YELLOW = 'FFFEF3C7'
-    const HEADER_BLUE = 'FFDBEAFE'
-    const MASUK_GREEN = 'FF047857'
-    const PULANG_RED = 'FFDC2626'
-    const PHOTO_W = 170
-    const PHOTO_H = 125
-    const ROW_H = 100
+    // Column widths
+    worksheet.getColumn(1).width = 5    // No
+    worksheet.getColumn(2).width = 14   // Tanggal
+    worksheet.getColumn(3).width = 8    // Jam
+    worksheet.getColumn(4).width = 26   // Nama
+    worksheet.getColumn(5).width = 10   // Tipe
+    worksheet.getColumn(6).width = 22   // Foto
 
-    let currentRow = 4
-    let workerIndex = 0
+    const PHOTO_WIDTH = 120
+    const PHOTO_HEIGHT = 90
+    const ROW_HEIGHT_PT = 75
 
-    const workerPairs = new Map<string, { name: string; in: (typeof sorted)[0] | null; out: (typeof sorted)[0] | null }>()
-    for (const att of sorted) {
-      const key = att.worker_id || 'unknown'
-      if (!workerPairs.has(key)) workerPairs.set(key, { name: att.workers?.name || 'Tidak Dikenal', in: null, out: null })
-      const pair = workerPairs.get(key)!
-      if (att.type === 'in') pair.in = att
-      else pair.out = att
-    }
+    // Build rows
+    for (let i = 0; i < sorted.length; i++) {
+      const att = sorted[i]
+      const rowNum = i + 4
 
-    const embedPhoto = async (path: string | null | undefined): Promise<number | null> => {
-      if (!path) return null
-      try {
-        const { data, error } = await dataClient.storage.from('kiosk-photos').download(path)
-        if (error || !data) return null
-        const buf = Buffer.from(await data.arrayBuffer())
-        return workbook.addImage({ buffer: buf as unknown as ExcelJS.Buffer, extension: 'jpeg' })
-      } catch {
-        return null
+      // Convert to local project time
+      const utcMs = new Date(att.occurred_at).getTime()
+      const localMs = utcMs + (offsetHours * 60 * 60 * 1000)
+      const localDate = new Date(localMs)
+
+      const dateStr = localDate.toISOString().split('T')[0]
+      const timeStr = localDate.toISOString().split('T')[1].substring(0, 5)
+
+      const row = worksheet.addRow([
+        i + 1,
+        dateStr,
+        timeStr,
+        escapeFormula(att.workers?.name || '-'),
+        att.type === 'in' ? 'MASUK' : 'PULANG',
+        ''
+      ])
+
+      row.height = ROW_HEIGHT_PT
+
+      // Style Tipe cell
+      const tipeCell = row.getCell(5)
+      if (att.type === 'in') {
+        tipeCell.font = { bold: true, color: { argb: 'FF047857' } } // emerald-700
+      } else {
+        tipeCell.font = { bold: true, color: { argb: 'FFDC2626' } } // red-600
       }
-    }
 
-    for (const [, pair] of workerPairs) {
-      const photoInId = await embedPhoto(pair.in?.evidence_path)
-      const photoOutId = await embedPhoto(pair.out?.evidence_path)
+      // Embed photo
+      if (att.evidence_path) {
+        try {
+          const { data: fileData, error: downloadErr } = await dataClient.storage
+            .from('kiosk-photos')
+            .download(att.evidence_path)
 
-      const timeInStr = pair.in ? formatLocalTime(pair.in.occurred_at, offsetHours) : '-'
-      const timeOutStr = pair.out ? formatLocalTime(pair.out.occurred_at, offsetHours) : '-'
+          if (!downloadErr && fileData) {
+            const arrayBuffer = await fileData.arrayBuffer()
+            const buffer = Buffer.from(arrayBuffer)
 
-      worksheet.addRow([]).height = 4
-      currentRow++
+            const imageId = workbook.addImage({
+              buffer: buffer as unknown as ExcelJS.Buffer,
+              extension: 'jpeg'
+            })
 
-      worksheet.addRow([`${workerIndex + 1}.  ${pair.name.toUpperCase()}`])
-      worksheet.mergeCells(currentRow, 1, currentRow, 6)
-      const sectionCell = worksheet.getCell(currentRow, 1)
-      sectionCell.font = { bold: true, size: 11, color: { argb: 'FF1E293B' } }
-      sectionCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SECTION_YELLOW } }
-      sectionCell.alignment = { horizontal: 'left' }
-      worksheet.getRow(currentRow).height = 26
-      currentRow++
+            const image = await loadImage(buffer)
+            const scale = Math.min(PHOTO_WIDTH / image.width, PHOTO_HEIGHT / image.height)
+            const width = Math.max(1, Math.round(image.width * scale))
+            const height = Math.max(1, Math.round(image.height * scale))
+            const horizontalOffset = (PHOTO_WIDTH - width) / 2
+            const verticalOffset = (PHOTO_HEIGHT - height) / 2
 
-      worksheet.addRow(['', 'MASUK', '', '', 'PULANG', ''])
-      worksheet.mergeCells(currentRow, 2, currentRow, 3)
-      worksheet.mergeCells(currentRow, 5, currentRow, 6)
-      const hRow = worksheet.getRow(currentRow)
-
-      for (let c = 2; c <= 6; c++) {
-        const cell = hRow.getCell(c)
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BLUE } }
-        cell.font = { bold: true, size: 9 }
-        cell.alignment = { horizontal: 'center' }
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FF93C5FD' } },
-          bottom: { style: 'thin', color: { argb: 'FF93C5FD' } }
+            worksheet.addImage(imageId, {
+              // Column F is about 154px wide and a 75pt row is about 100px high.
+              tl: {
+                col: 5 + horizontalOffset / 154,
+                row: rowNum - 1 + verticalOffset / 100
+              },
+              ext: { width, height }
+            })
+          }
+        } catch {
+          // Photo download failed
         }
       }
-      worksheet.getCell(currentRow, 2).value = 'MASUK'
-      worksheet.getCell(currentRow, 5).value = 'PULANG'
-      hRow.height = 20
-      currentRow++
-
-      worksheet.addRow(['', 'Jam', 'Foto', '', 'Jam', 'Foto'])
-      const lRow = worksheet.getRow(currentRow)
-      for (let c = 2; c <= 6; c++) {
-        const cell = lRow.getCell(c)
-        cell.font = { size: 8, color: { argb: 'FF64748B' } }
-        cell.alignment = { horizontal: 'center' }
-        cell.border = { bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } } }
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
-      }
-      lRow.height = 18
-      currentRow++
-
-      worksheet.addRow(['', timeInStr, '', '', timeOutStr, ''])
-      const dRow = worksheet.getRow(currentRow)
-      dRow.height = ROW_H
-
-      dRow.getCell(2).font = { bold: true, size: 10, color: { argb: MASUK_GREEN } }
-      dRow.getCell(2).alignment = { vertical: 'top', horizontal: 'center' }
-      dRow.getCell(5).font = { bold: true, size: 10, color: { argb: PULANG_RED } }
-      dRow.getCell(5).alignment = { vertical: 'top', horizontal: 'center' }
-
-      for (let c = 1; c <= 6; c++) {
-        const cell = dRow.getCell(c)
-        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE2E8F0' } } }
-      }
-
-      if (photoInId !== null) {
-        worksheet.addImage(photoInId, {
-          tl: { col: 2, row: currentRow - 1 },
-          ext: { width: PHOTO_W, height: PHOTO_H }
-        })
-      } else {
-        dRow.getCell(3).value = 'Tidak ada foto'
-        dRow.getCell(3).font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } }
-        dRow.getCell(3).alignment = { horizontal: 'center' }
-      }
-
-      if (photoOutId !== null) {
-        worksheet.addImage(photoOutId, {
-          tl: { col: 4, row: currentRow - 1 },
-          ext: { width: PHOTO_W, height: PHOTO_H }
-        })
-      } else {
-        dRow.getCell(6).value = 'Tidak ada foto'
-        dRow.getCell(6).font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } }
-        dRow.getCell(6).alignment = { horizontal: 'center' }
-      }
-
-      currentRow++
-      workerIndex++
     }
 
     const buffer = (await workbook.xlsx.writeBuffer()) as unknown as Buffer
