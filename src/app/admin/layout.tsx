@@ -8,13 +8,14 @@ import {
   Users,
   CheckSquare,
   Clock,
-  DollarSign,
+  UsersRound,
   Download,
   LogOut,
   Smartphone,
   Shield,
-  FolderKanban
-  , Menu, X
+  FolderKanban,
+  Menu,
+  X
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { ThemeProvider } from '@/components/ThemeProvider'
@@ -132,7 +133,7 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
       icon: Smartphone
     },
     {
-      name: 'Pengaturan Proyek',
+      name: 'Pengaturan Lokasi / Proyek',
       path: '/admin/projects',
       icon: FolderKanban
     }
@@ -140,9 +141,9 @@ function AdminLayoutInner({ children }: AdminLayoutProps) {
 
   const utilityItems = [
     {
-      name: 'Rekap Payroll',
+      name: 'Daftar Tenaga Harian',
       path: '/admin/payroll',
-      icon: DollarSign
+      icon: UsersRound
     },
     {
       name: 'Histori Error',

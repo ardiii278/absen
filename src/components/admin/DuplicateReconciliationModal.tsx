@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
-import { AlertTriangle, CheckCircle, MapPin, Clock } from 'lucide-react'
+import { AlertTriangle, CheckCircle, MapPin, Clock, Trash2 } from 'lucide-react'
 import { AttendanceRecord, DuplicateGroup } from '@/types'
 import { supabase } from '@/lib/supabase'
 import Modal from '@/components/ui/Modal'
@@ -17,6 +17,7 @@ interface DuplicateReconciliationModalProps {
 export default function DuplicateReconciliationModal({ duplicate, onClose, onResolved }: DuplicateReconciliationModalProps) {
   const [selectedValidId, setSelectedValidId] = useState<string | null>(null)
   const [reason, setReason] = useState('')
+  const [actualTime, setActualTime] = useState('')
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [evidenceUrls, setEvidenceUrls] = useState<Record<string, string | null>>({})
@@ -42,6 +43,7 @@ export default function DuplicateReconciliationModal({ duplicate, onClose, onRes
       const t = setTimeout(() => {
         setSelectedValidId(null)
         setReason('')
+        setActualTime('')
         setErrorMsg(null)
         setEvidenceUrls({})
         loadEvidencePhotos()
@@ -65,7 +67,8 @@ export default function DuplicateReconciliationModal({ duplicate, onClose, onRes
         body: JSON.stringify({
           recordIds: duplicate.records.map(record => record.id),
           selectedValidId,
-          reason
+          reason,
+          actualOccurredAt: actualTime ? new Date(actualTime).toISOString() : null
         })
       })
       const result = await response.json()
@@ -76,6 +79,34 @@ export default function DuplicateReconciliationModal({ duplicate, onClose, onRes
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal menyelesaikan duplikat'
       setErrorMsg(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteRecord = async (record: AttendanceRecord) => {
+    if (!reason.trim()) {
+      setErrorMsg('Isi alasan koreksi sebelum menghapus record.')
+      return
+    }
+    if (!window.confirm(`Hapus permanen record ${record.type === 'in' ? 'MASUK' : 'PULANG'} pukul ${new Date(record.occurred_at).toLocaleTimeString('id-ID')}?`)) return
+    setLoading(true)
+    setErrorMsg(null)
+    try {
+      const session = await supabase.auth.getSession()
+      const token = session.data.session?.access_token
+      if (!token) throw new Error('Sesi admin berakhir. Silakan login ulang.')
+      const response = await fetch('/api/attendance/reconcile', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ recordId: record.id, reason })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Gagal menghapus record')
+      onResolved()
+      onClose()
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Gagal menghapus record')
     } finally {
       setLoading(false)
     }
@@ -123,6 +154,14 @@ export default function DuplicateReconciliationModal({ duplicate, onClose, onRes
                   <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
               )}
+              <button
+                type="button"
+                onClick={(event) => { event.stopPropagation(); handleDeleteRecord(record) }}
+                disabled={loading}
+                className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                <Trash2 className="h-3 w-3" /> Hapus Record
+              </button>
 
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-xs font-bold text-slate-400 dark:text-slate-500">Option {String.fromCharCode(65 + idx)}</span>
@@ -163,6 +202,13 @@ export default function DuplicateReconciliationModal({ duplicate, onClose, onRes
       </div>
 
       <div className="mb-4">
+        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Waktu Absensi Aktual (Opsional)</label>
+        <input
+          type="datetime-local"
+          value={actualTime}
+          onChange={event => setActualTime(event.target.value)}
+          className="mb-4 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+        />
         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Alasan Koreksi (Wajib)</label>
         <textarea
           className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"

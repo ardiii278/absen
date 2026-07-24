@@ -11,6 +11,24 @@ interface Project {
   lat: number | null
   lng: number | null
   radius_m: number | null
+  activeWorkforce: number
+  totalWorkforce: number
+  scopeCounts: Record<string, number>
+}
+
+interface ProjectRow {
+  id: string
+  code: string
+  name: string
+  lat: number | null
+  lng: number | null
+  radius_m: number | null
+}
+
+interface WorkerAggregateRow {
+  project_id: string
+  job_scope: string | null
+  is_active: boolean
 }
 
 export default function ProjectsManagementPage() {
@@ -45,13 +63,29 @@ export default function ProjectsManagementPage() {
     setLoading(true)
     setErrorMsg(null)
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('id, code, name, lat, lng, radius_m')
-        .order('created_at', { ascending: false })
+      const [projectResult, workerResult] = await Promise.all([
+        supabase.from('projects').select('id, code, name, lat, lng, radius_m').order('created_at', { ascending: false }),
+        supabase.from('workers').select('id, project_id, job_scope, is_active')
+      ])
 
-      if (error) throw error
-      setProjects((data as Project[]) || [])
+      if (projectResult.error) throw projectResult.error
+      if (workerResult.error) throw workerResult.error
+      const workers = (workerResult.data as WorkerAggregateRow[]) || []
+      const enrichedProjects = ((projectResult.data as ProjectRow[]) || []).map(project => {
+        const projectWorkers = workers.filter(worker => worker.project_id === project.id)
+        const scopeCounts = projectWorkers.reduce<Record<string, number>>((counts, worker) => {
+          const scope = worker.job_scope?.trim() || 'Tanpa Sub Pekerjaan'
+          counts[scope] = (counts[scope] || 0) + 1
+          return counts
+        }, {})
+        return {
+          ...project,
+          activeWorkforce: projectWorkers.filter(worker => worker.is_active).length,
+          totalWorkforce: projectWorkers.length,
+          scopeCounts
+        }
+      })
+      setProjects(enrichedProjects)
     } catch (err: unknown) {
       let msg = 'Gagal memuat data proyek'
       if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
@@ -234,14 +268,14 @@ export default function ProjectsManagementPage() {
         {/* Title and Action */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Kelola Proyek & Lokasi</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Kelola Lokasi / Proyek</h1>
             <p className="text-sm text-slate-500 mt-1">Atur lokasi kerja, titik GPS koordinat, dan radius absensi (geofencing)</p>
           </div>
           <button
             onClick={openCreateModal}
             className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-semibold transition"
           >
-            + Tambah Proyek / Lokasi
+            + Tambah Lokasi / Proyek
           </button>
         </div>
 
@@ -266,21 +300,23 @@ export default function ProjectsManagementPage() {
               <thead>
                 <tr className="border-b border-slate-100 text-slate-400 text-sm font-semibold">
                   <th className="py-3 px-4">Kode Proyek</th>
-                  <th className="py-3 px-4">Nama Proyek / Lokasi</th>
+                  <th className="py-3 px-4">Nama Lokasi / Proyek</th>
                   <th className="py-3 px-4">Latitude</th>
                   <th className="py-3 px-4">Longitude</th>
                   <th className="py-3 px-4">Radius Absen</th>
+                  <th className="py-3 px-4">Total Tenaga</th>
+                  <th className="py-3 px-4">Sub Pekerjaan</th>
                   <th className="py-3 px-4 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">Memuat data proyek...</td>
+                    <td colSpan={8} className="py-8 text-center text-slate-400">Memuat data proyek...</td>
                   </tr>
                 ) : projects.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">Belum ada lokasi proyek yang terdaftar.</td>
+                    <td colSpan={8} className="py-8 text-center text-slate-400">Belum ada lokasi / proyek yang terdaftar.</td>
                   </tr>
                 ) : (
                   projects.map(proj => (
@@ -290,6 +326,8 @@ export default function ProjectsManagementPage() {
                       <td className="py-3 px-4 text-sm font-mono">{proj.lat !== null ? proj.lat.toFixed(6) : '-'}</td>
                       <td className="py-3 px-4 text-sm font-mono">{proj.lng !== null ? proj.lng.toFixed(6) : '-'}</td>
                       <td className="py-3 px-4 text-sm">{proj.radius_m !== null ? `${proj.radius_m} meter` : '-'}</td>
+                      <td className="py-3 px-4 text-sm"><span className="font-bold text-slate-800">{proj.activeWorkforce}</span><span className="text-slate-400"> aktif / {proj.totalWorkforce} total</span></td>
+                      <td className="py-3 px-4"><div className="flex min-w-48 flex-wrap gap-1.5">{Object.entries(proj.scopeCounts).length === 0 ? <span className="text-xs text-slate-400">Belum ada tenaga</span> : Object.entries(proj.scopeCounts).sort(([a], [b]) => a.localeCompare(b)).map(([scope, count]) => <span key={scope} className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{scope}: {count}</span>)}</div></td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex gap-2 justify-end">
                           <button

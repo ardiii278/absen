@@ -24,6 +24,12 @@ export async function POST(req: NextRequest) {
       : []
     const selectedValidId = typeof body.selectedValidId === 'string' ? body.selectedValidId : ''
     const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
+    const actualOccurredAt = typeof body.actualOccurredAt === 'string' && body.actualOccurredAt
+      ? new Date(body.actualOccurredAt)
+      : null
+    if (actualOccurredAt && Number.isNaN(actualOccurredAt.getTime())) {
+      return NextResponse.json({ error: 'Waktu absensi aktual tidak valid' }, { status: 400 })
+    }
     if (recordIds.length < 2 || !selectedValidId || !recordIds.includes(selectedValidId) || !reason) {
       return NextResponse.json({ error: 'Pilihan record dan alasan rekonsiliasi wajib diisi' }, { status: 400 })
     }
@@ -56,7 +62,11 @@ export async function POST(req: NextRequest) {
     const rejectedIds = recordIds.filter((id: string) => id !== selectedValidId)
     const { data: approved, error: approveError } = await service
       .from('attendance')
-      .update({ status: 'approved', conflict_of: null })
+      .update({
+        status: 'approved',
+        conflict_of: null,
+        ...(actualOccurredAt ? { occurred_at: actualOccurredAt.toISOString() } : {})
+      })
       .eq('id', selectedValidId)
       .select('id')
     if (approveError || approved?.length !== 1) {
@@ -80,12 +90,53 @@ export async function POST(req: NextRequest) {
       record.id === selectedValidId ? 'RESOLVED_DUPLICATE_VALID' : 'RESOLVED_DUPLICATE_INVALID',
       reason,
       { status: record.status, conflict_of: record.conflict_of },
-      { status: record.id === selectedValidId ? 'approved' : 'rejected', conflict_of: record.id === selectedValidId ? null : record.conflict_of }
+      {
+        status: record.id === selectedValidId ? 'approved' : 'rejected',
+        conflict_of: record.id === selectedValidId ? null : record.conflict_of,
+        ...(record.id === selectedValidId && actualOccurredAt ? { occurred_at: actualOccurredAt.toISOString() } : {})
+      }
     )))
 
     return NextResponse.json({ success: true, approvedId: selectedValidId, rejectedCount: rejectedIds.length })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Gagal menyelesaikan duplikat'
+    const status = message === 'UNAUTHORIZED' ? 401 : message === 'FORBIDDEN' ? 403 : 500
+    return NextResponse.json({ error: message }, { status })
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const auth = await verifyAuth(req)
+    if (!['admin', 'super_admin'].includes(auth.profile.role)) {
+      return NextResponse.json({ error: 'Hanya admin yang dapat menghapus absensi' }, { status: 403 })
+    }
+    const body = await req.json()
+    const recordId = typeof body.recordId === 'string' ? body.recordId : ''
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
+    if (!recordId || !reason) return NextResponse.json({ error: 'Record dan alasan penghapusan wajib diisi' }, { status: 400 })
+
+    const service = createServiceClient()
+    const { data: record, error } = await service
+      .from('attendance')
+      .select('id, project_id, worker_id, type, occurred_at, status, evidence_path')
+      .eq('id', recordId)
+      .maybeSingle()
+    if (error || !record) return NextResponse.json({ error: 'Record absensi tidak ditemukan' }, { status: 404 })
+    if (!record.project_id || !await verifyProjectAccess(auth.client, auth.user.id, auth.profile.role, record.project_id)) {
+      return NextResponse.json({ error: 'Akses proyek ditolak' }, { status: 403 })
+    }
+
+    await createAuditLog(service, auth.user.id, 'attendance', record.id, 'DELETED_DUPLICATE_ATTENDANCE', reason, record, null)
+    const { error: deleteError } = await service.from('attendance').delete().eq('id', record.id)
+    if (deleteError) throw new Error(`Gagal menghapus record: ${deleteError.message}`)
+    if (record.evidence_path) {
+      const { error: storageError } = await service.storage.from('kiosk-photos').remove([record.evidence_path])
+      if (storageError) console.error('Gagal menghapus foto duplikat:', storageError.message)
+    }
+    return NextResponse.json({ success: true })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Gagal menghapus duplikat'
     const status = message === 'UNAUTHORIZED' ? 401 : message === 'FORBIDDEN' ? 403 : 500
     return NextResponse.json({ error: message }, { status })
   }
