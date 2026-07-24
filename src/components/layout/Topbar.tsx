@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import { Bell, Moon, Sun, ChevronDown, MapPin, Layers, Check } from 'lucide-react'
+import Link from 'next/link'
+import { Bell, Moon, Sun, ChevronDown, MapPin, Layers, Check, UserPlus, AlertTriangle, Clock3 } from 'lucide-react'
 import { useTheme } from '@/components/ThemeProvider'
 import { supabase } from '@/lib/supabase'
 import { fetchProjectJobScopes } from '@/lib/jobscopes'
@@ -28,7 +29,11 @@ export default function Topbar({
   const [adminName, setAdminName] = useState<string>('')
   const [showProjectDropdown, setShowProjectDropdown] = useState(false)
   const [showScopeDropdown, setShowScopeDropdown] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [attendancePending, setAttendancePending] = useState(0)
+  const [overtimePending, setOvertimePending] = useState(0)
   const filtersRef = useRef<HTMLDivElement>(null)
+  const notificationRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     async function loadData() {
@@ -50,6 +55,20 @@ export default function Topbar({
     loadData()
   }, [])
 
+  useEffect(() => {
+    const loadNotifications = async () => {
+      const [attendanceResult, overtimeResult] = await Promise.all([
+        supabase.from('attendance').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval'),
+        supabase.from('overtime').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval')
+      ])
+      setAttendancePending(attendanceResult.count || 0)
+      setOvertimePending(overtimeResult.count || 0)
+    }
+    const timeout = setTimeout(loadNotifications, 0)
+    const interval = setInterval(loadNotifications, 30_000)
+    return () => { clearTimeout(timeout); clearInterval(interval) }
+  }, [])
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -57,6 +76,7 @@ export default function Topbar({
         setShowProjectDropdown(false)
         setShowScopeDropdown(false)
       }
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) setShowNotifications(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -75,6 +95,12 @@ export default function Topbar({
   }, [selectedProjectId])
 
   const selectedProject = projects.find(p => p.id === selectedProjectId)
+  const totalNotifications = pendingApprovalCount + attendancePending + overtimePending
+  const notifications = [
+    { label: 'Persetujuan pekerja baru', count: pendingApprovalCount, href: '/admin/workers?filter=pending', icon: UserPlus },
+    { label: 'Koreksi absensi', count: attendancePending, href: '/admin/attendance', icon: AlertTriangle },
+    { label: 'Permohonan lembur', count: overtimePending, href: '/admin/overtime', icon: Clock3 }
+  ]
 
   const dropdownPanel =
     'absolute top-full left-0 mt-2 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200/80 dark:border-slate-700 z-50 py-1.5 max-h-64 overflow-y-auto animate-fade-up'
@@ -172,15 +198,23 @@ export default function Topbar({
           {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
         </button>
 
-        <div className="relative">
-          <button className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-500 dark:text-slate-400">
+        <div className="relative" ref={notificationRef}>
+          <button onClick={() => setShowNotifications(value => !value)} aria-label="Buka notifikasi" aria-expanded={showNotifications} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition text-slate-500 dark:text-slate-400">
             <Bell className="w-5 h-5" />
-            {pendingApprovalCount > 0 && (
+            {totalNotifications > 0 && (
               <span className="absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-white dark:ring-slate-800">
-                {pendingApprovalCount > 9 ? '9+' : pendingApprovalCount}
+                {totalNotifications > 9 ? '9+' : totalNotifications}
               </span>
             )}
           </button>
+          {showNotifications && (
+            <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
+              <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-700"><p className="font-bold text-slate-800 dark:text-slate-100">Notifikasi</p><p className="text-xs text-slate-400">{totalNotifications} item membutuhkan perhatian</p></div>
+              <div className="p-2">
+                {notifications.map(item => <Link key={item.href} href={item.href} onClick={() => setShowNotifications(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/70"><span className="rounded-lg bg-slate-100 p-2 text-slate-600 dark:bg-slate-700 dark:text-slate-300"><item.icon className="h-4 w-4" /></span><span className="flex-1 text-sm font-semibold text-slate-700 dark:text-slate-200">{item.label}</span><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${item.count ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{item.count}</span></Link>)}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2.5 pl-3 ml-1 border-l border-slate-200 dark:border-slate-700">

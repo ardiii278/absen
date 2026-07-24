@@ -127,7 +127,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Akses proyek ditolak' }, { status: 403 })
     }
 
-    await createAuditLog(service, auth.user.id, 'attendance', record.id, 'DELETED_DUPLICATE_ATTENDANCE', reason, record, null)
+    await createAuditLog(service, auth.user.id, 'attendance', record.id, 'DELETED_ATTENDANCE', reason, record, null)
     const { error: deleteError } = await service.from('attendance').delete().eq('id', record.id)
     if (deleteError) throw new Error(`Gagal menghapus record: ${deleteError.message}`)
     if (record.evidence_path) {

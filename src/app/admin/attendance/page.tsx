@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Trash2 } from 'lucide-react'
 import { AttendanceRecord, DuplicateGroup } from '@/types'
 import { AttendanceTypeBadge, StatusBadge } from '@/components/ui/StatusBadge'
 import DuplicateReconciliationModal, { findDuplicates } from '@/components/admin/DuplicateReconciliationModal'
@@ -21,6 +21,9 @@ export default function AttendanceReviewPage() {
   const [correctionTime, setCorrectionTime] = useState('')
   const [lateDeduction, setLateDeduction] = useState(0)
   const [reason, setReason] = useState('')
+  const [deletingRecord, setDeletingRecord] = useState<AttendanceRecord | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   const fetchAttendance = useCallback(async () => {
     setLoading(true)
@@ -115,6 +118,32 @@ export default function AttendanceReviewPage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal menyimpan koreksi'
       setErrorMsg(msg)
+    }
+  }
+
+  const handleDeleteRecord = async () => {
+    if (!deletingRecord || !deleteReason.trim()) return
+    setDeleteLoading(true)
+    setErrorMsg(null)
+    try {
+      const session = await supabase.auth.getSession()
+      const token = session.data.session?.access_token
+      if (!token) throw new Error('Sesi admin berakhir. Silakan login ulang.')
+      const response = await fetch('/api/attendance/reconcile', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ recordId: deletingRecord.id, reason: deleteReason })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Gagal menghapus record absensi')
+      setDeletingRecord(null)
+      setDeleteReason('')
+      setSuccessMsg('Record absensi dan foto buktinya berhasil dihapus.')
+      await fetchAttendance()
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Gagal menghapus record absensi')
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
@@ -242,6 +271,12 @@ export default function AttendanceReviewPage() {
                         >
                           Koreksi
                         </button>
+                        <button
+                          onClick={() => { setDeletingRecord(record); setDeleteReason('') }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 text-red-700 dark:text-red-300 rounded text-xs transition"
+                        >
+                          <Trash2 className="h-3 w-3" /> Hapus
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -260,6 +295,33 @@ export default function AttendanceReviewPage() {
           await fetchAttendance()
         }}
       />
+
+      <Modal
+        isOpen={!!deletingRecord}
+        onClose={() => { if (!deleteLoading) { setDeletingRecord(null); setDeleteReason('') } }}
+        title="Hapus Record Absensi"
+        subtitle="Record, foto bukti, dan pengaruhnya pada rekap akan dihapus permanen"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {deletingRecord?.workers?.name} · {deletingRecord?.type === 'in' ? 'MASUK' : 'PULANG'} · {deletingRecord ? new Date(deletingRecord.occurred_at).toLocaleString('id-ID') : ''}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">Alasan Penghapusan (Wajib)</label>
+            <textarea
+              value={deleteReason}
+              onChange={event => setDeleteReason(event.target.value)}
+              rows={3}
+              placeholder="Contoh: salah menyetujui record duplikat"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700"
+            />
+          </div>
+          <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 dark:border-slate-700">
+            <button onClick={() => { setDeletingRecord(null); setDeleteReason('') }} disabled={deleteLoading} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Batal</button>
+            <button onClick={handleDeleteRecord} disabled={deleteLoading || !deleteReason.trim()} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{deleteLoading ? 'Menghapus...' : 'Hapus Permanen'}</button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={!!selectedRecord}
