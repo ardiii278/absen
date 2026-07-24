@@ -1,30 +1,49 @@
 'use client'
 
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import RegisterWorkerModal from '@/components/user/RegisterWorkerModal'
 
 export default function UserRegisterPage() {
   const router = useRouter()
-  const projectId = useSyncExternalStore(
-    () => () => {},
-    () => localStorage.getItem('kiosk_project_id'),
-    () => null
-  )
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    if (!projectId) router.replace('/login')
-  }, [projectId, router])
+    const timeout = setTimeout(() => {
+      setMounted(true)
+    }, 0)
+    const stored = localStorage.getItem('kiosk_project_id')
+    if (!stored) {
+      router.replace('/login')
+    }
+    return () => clearTimeout(timeout)
+  }, [router])
+
+  if (!mounted) {
+    return (
+      <main className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <p className="text-slate-400 text-sm">Mengalihkan...</p>
+      </main>
+    )
+  }
+
+  const projectId = localStorage.getItem('kiosk_project_id')
+
+  if (!projectId) {
+    return (
+      <main className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <p className="text-slate-400 text-sm">Mengalihkan...</p>
+      </main>
+    )
+  }
 
   return (
     <main className="min-h-screen bg-slate-100">
-      {projectId && (
-        <RegisterWorkerModal
-          isOpen
-          projectId={projectId}
-          onClose={() => router.replace('/user')}
-        />
-      )}
+      <RegisterWorkerModal
+        isOpen
+        projectId={projectId}
+        onClose={() => router.replace('/user')}
+      />
     </main>
   )
 }
