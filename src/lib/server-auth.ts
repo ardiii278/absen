@@ -281,6 +281,18 @@ export function getProjectLocalDayBoundaries(
   return { localDateStr, startUtcStr, endUtcStr }
 }
 
+export function getProjectDateRangeBoundaries(
+  startDate: string,
+  endDate: string,
+  offsetHours: number
+): { startUtcStr: string; endUtcStr: string } {
+  const start = new Date(`${startDate}T00:00:00.000Z`)
+  start.setUTCHours(start.getUTCHours() - offsetHours)
+  const end = new Date(`${endDate}T23:59:59.999Z`)
+  end.setUTCHours(end.getUTCHours() - offsetHours)
+  return { startUtcStr: start.toISOString(), endUtcStr: end.toISOString() }
+}
+
 export async function logServerError(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   client: any,

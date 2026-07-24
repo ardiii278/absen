@@ -27,6 +27,7 @@ export default function ExportsPage() {
 
   const [showPurgeConfirm, setShowPurgeConfirm] = useState(false)
   const [backupVerified, setBackupVerified] = useState(false)
+  const [backupSelection, setBackupSelection] = useState<string | null>(null)
   const [purgeStats, setPurgeStats] = useState({ count: 0 })
 
   useEffect(() => {
@@ -85,7 +86,32 @@ export default function ExportsPage() {
 
   const getToken = async () => {
     const sessionRes = await supabase.auth.getSession()
-    return sessionRes.data.session?.access_token
+    const token = sessionRes.data.session?.access_token
+    if (!token) throw new Error('Sesi admin berakhir. Silakan login ulang.')
+    return token
+  }
+
+  const selectionKey = `${selectedProjectId}|${selectedJobScope}|${startDate}|${endDate}`
+
+  const downloadResponse = async (res: Response, filename: string) => {
+    if (!res.ok) {
+      const contentType = res.headers.get('content-type') || ''
+      if (contentType.includes('application/json')) {
+        const data = await res.json()
+        throw new Error(data.error || `Permintaan gagal (${res.status})`)
+      }
+      throw new Error(`Permintaan ekspor gagal (${res.status})`)
+    }
+    const blob = await res.blob()
+    if (!blob.size) throw new Error('File ekspor kosong.')
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(url)
   }
 
   const handleExportExcel = async () => {
@@ -109,19 +135,7 @@ export default function ExportsPage() {
         })
       })
 
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.error || 'Gagal ekspor Excel')
-      }
-
-      const blob = await res.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `rekap_absen_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadResponse(res, `rekap_absen_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`)
       setSuccessMsg('Rekap Excel berhasil diunduh.')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal ekspor Excel'
@@ -152,19 +166,7 @@ export default function ExportsPage() {
         })
       })
 
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.error || 'Gagal ekspor absen harian')
-      }
-
-      const blob = await res.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `absen_harian_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadResponse(res, `absen_harian_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.xlsx`)
       setSuccessMsg('Absen harian dengan foto berhasil diunduh.')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal ekspor absen harian'
@@ -195,22 +197,11 @@ export default function ExportsPage() {
         })
       })
 
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.error || 'Gagal ekspor ZIP')
-      }
-
-      const blob = await res.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `backup_bukti_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.zip`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      await downloadResponse(res, `backup_bukti_${selectedProjectName.replace(/[^a-zA-Z0-9\-_]/g, '_')}_${startDate}_${endDate}.zip`)
 
       setBackupVerified(true)
-      setSuccessMsg('Backup ZIP berhasil diunduh dan terverifikasi.')
+      setBackupSelection(selectionKey)
+      setSuccessMsg('Backup ZIP berhasil diunduh untuk pilihan data saat ini.')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal ekspor ZIP'
       setErrorMsg(msg)
@@ -224,24 +215,24 @@ export default function ExportsPage() {
     setErrorMsg(null)
     setSuccessMsg(null)
     
-    const { count, error } = await supabase
-      .from('attendance')
-      .select('id', { count: 'exact', head: true })
-      .eq('project_id', selectedProjectId)
-      .gte('occurred_at', `${startDate}T00:00:00Z`)
-      .lte('occurred_at', `${endDate}T23:59:59.999Z`)
-      .not('evidence_path', 'is', null)
-
-    if (error) {
-      setErrorMsg(error.message)
-    } else {
-      setPurgeStats({ count: count || 0 })
+    try {
+      const token = await getToken()
+      const response = await fetch('/api/retention', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'preview', projectId: selectedProjectId, startDate, endDate, jobScope: selectedJobScope || null })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Gagal memeriksa data retensi')
+      setPurgeStats({ count: result.count || 0 })
       setShowPurgeConfirm(true)
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Gagal memeriksa data retensi')
     }
-  }, [selectedProjectId, startDate, endDate])
+  }, [selectedProjectId, selectedJobScope, startDate, endDate])
 
   const handlePurge = async () => {
-    if (!backupVerified) {
+    if (!backupVerified || backupSelection !== selectionKey) {
       setErrorMsg('Purge ditolak: Unduh dan verifikasi Backup ZIP terlebih dahulu.')
       return
     }
@@ -251,49 +242,26 @@ export default function ExportsPage() {
     setLoading(true)
 
     try {
-      const { data: records, error: fetchErr } = await supabase
-        .from('attendance')
-        .select('id, evidence_path')
-        .eq('project_id', selectedProjectId)
-        .gte('occurred_at', `${startDate}T00:00:00Z`)
-        .lte('occurred_at', `${endDate}T23:59:59.999Z`)
-        .not('evidence_path', 'is', null)
-
-      if (fetchErr) throw fetchErr
-
-      const rawRecords = (records as { id: string; evidence_path: string | null }[]) || []
-
-      if (rawRecords.length > 0) {
-        const filePaths = rawRecords.map((r) => r.evidence_path).filter((p): p is string => !!p)
-        
-        const { error: storageErr } = await supabase.storage
-          .from('kiosk-photos')
-          .remove(filePaths)
-
-        if (storageErr) throw storageErr
-
-        for (const record of rawRecords) {
-          const { error: updateErr } = await supabase
-            .from('attendance')
-            .update({ evidence_path: null })
-            .eq('id', record.id)
-          if (updateErr) throw updateErr
-        }
-      }
-
-      const userRes = await supabase.auth.getUser()
-      const { error: logErr } = await supabase.from('audit_logs').insert({
-        actor_id: userRes.data.user?.id || null,
-        entity_type: 'projects',
-        entity_id: selectedProjectId,
-        action: 'PURGED_STORAGE_EVIDENCE',
-        reason: `Pembersihan penyimpanan foto absensi periode ${startDate} - ${endDate}`
+      const token = await getToken()
+      const response = await fetch('/api/retention', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          action: 'purge',
+          projectId: selectedProjectId,
+          startDate,
+          endDate,
+          jobScope: selectedJobScope || null,
+          backupConfirmed: true
+        })
       })
-      if (logErr) console.error('Gagal menyimpan audit log:', logErr.message)
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Gagal membersihkan storage')
 
-      setSuccessMsg('Pembersihan storage selesai. Data teks absensi tetap dipertahankan.')
+      setSuccessMsg(`${result.count || 0} foto berhasil dibersihkan. Data teks absensi tetap dipertahankan.`)
       setShowPurgeConfirm(false)
       setBackupVerified(false)
+      setBackupSelection(null)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Gagal membersihkan storage'
       setErrorMsg(msg)

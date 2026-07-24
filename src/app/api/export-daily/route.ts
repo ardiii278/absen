@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
-import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, createAuditLog, logServerError } from '@/lib/server-auth'
+import { createServiceClient, verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, getProjectDateRangeBoundaries, createAuditLog, logServerError } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase'
 import { exportRequestSchema } from '@/lib/validators'
 
@@ -53,8 +53,9 @@ export async function POST(req: NextRequest) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Akses proyek ditolak' }, { status: 403 })
     }
+    const dataClient = createServiceClient()
 
-    const { data: project } = await client
+    const { data: project } = await dataClient
       .from('projects')
       .select('name')
       .eq('id', projectId)
@@ -62,10 +63,11 @@ export async function POST(req: NextRequest) {
 
     const projectName = project ? project.name : 'Proyek'
 
-    const offsetHours = await getProjectTimezoneOffset(client, projectId)
+    const offsetHours = await getProjectTimezoneOffset(dataClient, projectId)
+    const { startUtcStr, endUtcStr } = getProjectDateRangeBoundaries(startDate, endDate, offsetHours)
 
     // Fetch workers list first to filter by job scope
-    let workerQuery = client
+    let workerQuery = dataClient
       .from('workers')
       .select('id')
       .eq('project_id', projectId)
@@ -82,14 +84,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Fetch all attendance records
-    const { data: rawAttendance, error: attErr } = await client
+    const { data: rawAttendance, error: attErr } = await dataClient
       .from('attendance')
       .select('id, worker_id, type, occurred_at, evidence_path, source, status, workers(name, nik)')
       .eq('project_id', projectId)
       .eq('status', 'approved')
       .in('worker_id', workerIds)
-      .gte('occurred_at', `${startDate}T00:00:00Z`)
-      .lte('occurred_at', `${endDate}T23:59:59.999Z`)
+      .gte('occurred_at', startUtcStr)
+      .lte('occurred_at', endUtcStr)
       .order('occurred_at', { ascending: true })
 
     if (attErr) {
@@ -183,7 +185,7 @@ export async function POST(req: NextRequest) {
       // Embed photo
       if (att.evidence_path) {
         try {
-          const { data: fileData, error: downloadErr } = await client.storage
+          const { data: fileData, error: downloadErr } = await dataClient.storage
             .from('kiosk-photos')
             .download(att.evidence_path)
 

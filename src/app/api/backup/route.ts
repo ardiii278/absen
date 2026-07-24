@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
-import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, createAuditLog, logServerError } from '@/lib/server-auth'
+import { createServiceClient, verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, getProjectDateRangeBoundaries, createAuditLog, logServerError } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase'
 import { exportRequestSchema } from '@/lib/validators'
 
@@ -95,9 +95,10 @@ export async function POST(req: NextRequest) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Akses proyek ditolak' }, { status: 403 })
     }
+    const dataClient = createServiceClient()
 
     // 5. Fetch project name
-    const { data: project, error: projErr } = await client
+    const { data: project, error: projErr } = await dataClient
       .from('projects')
       .select('name')
       .eq('id', projectId)
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
     const projectName = project ? project.name : 'Semua Proyek'
 
     // Fetch workers list (filtered by project and optional jobScope)
-    let workerQuery = client
+    let workerQuery = dataClient
       .from('workers')
       .select('id, name, nik, position, daily_wage, job_scope')
       .eq('project_id', projectId)
@@ -130,13 +131,16 @@ export async function POST(req: NextRequest) {
     const workerIds = workersList.map(w => w.id)
 
     // 6. Fetch attendance records in date range
-    const { data: rawAttendance, error: attErr } = await client
+    const offsetHours = await getProjectTimezoneOffset(dataClient, projectId)
+    const { startUtcStr, endUtcStr } = getProjectDateRangeBoundaries(startDate, endDate, offsetHours)
+    const { data: rawAttendance, error: attErr } = await dataClient
       .from('attendance')
       .select('id, client_event_id, worker_id, project_id, type, occurred_at, evidence_path, gps, source, workers(name, nik)')
       .eq('project_id', projectId)
+      .eq('status', 'approved')
       .in('worker_id', workerIds)
-      .gte('occurred_at', `${startDate}T00:00:00Z`)
-      .lte('occurred_at', `${endDate}T23:59:59.999Z`)
+      .gte('occurred_at', startUtcStr)
+      .lte('occurred_at', endUtcStr)
 
     if (attErr) {
       return NextResponse.json({ error: 'Gagal mengambil data absensi' }, { status: 500 })
@@ -149,7 +153,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 7. Fetch approved overtime records for this project and date range
-    const { data: overtimes, error: otErr } = await client
+    const { data: overtimes, error: otErr } = await dataClient
       .from('overtime')
       .select('id, work_date')
       .eq('project_id', projectId)
@@ -161,7 +165,7 @@ export async function POST(req: NextRequest) {
     const overtimesList = (overtimes || []) as { id: string; work_date: string }[]
     if (!otErr && overtimes && overtimes.length > 0) {
       const overtimeIds = overtimesList.map(ot => ot.id)
-      const { data: otMap, error: otMapErr } = await client
+      const { data: otMap, error: otMapErr } = await dataClient
         .from('overtime_workers')
         .select('worker_id, hours, overtime_id')
         .in('overtime_id', overtimeIds)
@@ -169,8 +173,6 @@ export async function POST(req: NextRequest) {
         overtimeMapping = otMap
       }
     }
-
-    const offsetHours = await getProjectTimezoneOffset(client, projectId)
 
     // 8. Generate list of dates in range
     const dateList: string[] = []
@@ -434,7 +436,8 @@ export async function POST(req: NextRequest) {
     for (const record of attendance) {
       const dateStr = new Date(record.occurred_at).toISOString().split('T')[0]
       const safeName = (record.workers?.name || 'unknown').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_')
-      const fileName = `${safeName}.jpg`
+      const timePart = new Date(record.occurred_at).toISOString().replace(/[:.]/g, '-')
+      const fileName = `${safeName}_${record.type || 'unknown'}_${timePart}_${record.id}.jpg`
 
       const manifestItem: ManifestItem = {
         event_id: record.id,
@@ -452,7 +455,7 @@ export async function POST(req: NextRequest) {
         const isSafePath = record.evidence_path.startsWith('evidence/') && !record.evidence_path.includes('..')
         
         if (isSafePath) {
-          const { data: fileData, error: downloadErr } = await client.storage
+          const { data: fileData, error: downloadErr } = await dataClient.storage
             .from('kiosk-photos')
             .download(record.evidence_path)
 

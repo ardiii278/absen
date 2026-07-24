@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
-import { verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, createAuditLog, logServerError } from '@/lib/server-auth'
+import { createServiceClient, verifyAuth, verifyProjectAccess, getProjectTimezoneOffset, getProjectDateRangeBoundaries, createAuditLog, logServerError } from '@/lib/server-auth'
 import { supabase } from '@/lib/supabase'
 import { exportRequestSchema } from '@/lib/validators'
 
@@ -59,9 +59,10 @@ export async function POST(req: NextRequest) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Akses proyek ditolak' }, { status: 403 })
     }
+    const dataClient = createServiceClient()
 
     // 5. Fetch project name
-    const { data: project, error: projErr } = await client
+    const { data: project, error: projErr } = await dataClient
       .from('projects')
       .select('name')
       .eq('id', projectId)
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
     const projectName = project ? project.name : 'Semua Proyek'
 
     // 6. Fetch workers (filtered by project and optional jobScope)
-    let workerQuery = client
+    let workerQuery = dataClient
       .from('workers')
       .select('id, name, nik, position, daily_wage, job_scope')
       .eq('project_id', projectId)
@@ -90,20 +91,22 @@ export async function POST(req: NextRequest) {
     }
 
     // 7. Fetch attendance records in date range
-    const { data: attendance, error: attErr } = await client
+    const offsetHours = await getProjectTimezoneOffset(dataClient, projectId)
+    const { startUtcStr, endUtcStr } = getProjectDateRangeBoundaries(startDate, endDate, offsetHours)
+    const { data: attendance, error: attErr } = await dataClient
       .from('attendance')
       .select('*')
       .eq('project_id', projectId)
       .eq('status', 'approved')
-      .gte('occurred_at', `${startDate}T00:00:00Z`)
-      .lte('occurred_at', `${endDate}T23:59:59.999Z`)
+      .gte('occurred_at', startUtcStr)
+      .lte('occurred_at', endUtcStr)
 
     if (attErr) {
       return NextResponse.json({ error: 'Gagal mengambil data absensi' }, { status: 500 })
     }
 
     // 8. Fetch approved overtime records for this project and date range
-    const { data: overtimes, error: otErr } = await client
+    const { data: overtimes, error: otErr } = await dataClient
       .from('overtime')
       .select('id, work_date')
       .eq('project_id', projectId)
@@ -121,7 +124,7 @@ export async function POST(req: NextRequest) {
     // 9. Fetch overtime workers mapping if there are any overtime records
     let overtimeMapping: { worker_id: string; hours: number; overtime_id: string }[] = []
     if (overtimeIds.length > 0) {
-      const { data: otMap, error: otMapErr } = await client
+      const { data: otMap, error: otMapErr } = await dataClient
         .from('overtime_workers')
         .select('worker_id, hours, overtime_id')
         .in('overtime_id', overtimeIds)
@@ -132,8 +135,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Get project timezone offset
-    const offsetHours = await getProjectTimezoneOffset(client, projectId)
-
     // 10. Generate list of dates in range
     const dateList: string[] = []
     const start = new Date(startDate)
