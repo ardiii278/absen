@@ -38,6 +38,8 @@ export default function UserPage() {
   const [queuedCount, setQueuedCount] = useState(0)
   const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('day')
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [permissionReady, setPermissionReady] = useState(false)
+  const [permissionStatus, setPermissionStatus] = useState<string | null>(null)
 
   const [scanMode, setScanMode] = useState<'in' | 'out' | null>(null)
   const [gpsCoords, setGpsCoords] = useState<{ latitude: number; longitude: number }>({ latitude: -6.2, longitude: 106.8 })
@@ -294,6 +296,37 @@ export default function UserPage() {
     setScanMode(null)
   }, [scanMode, projectId, gpsCoords, submitOrQueue])
 
+  // Pre-request camera & GPS permissions on page load
+  useEffect(() => {
+    if (!projectId) return
+    const t = setTimeout(async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false })
+        stream.getTracks().forEach(track => track.stop())
+        setPermissionReady(true)
+        setPermissionStatus('Kamera siap digunakan')
+      } catch {
+        setPermissionStatus('Izin kamera belum diberikan — klik tombol absen untuk mengaktifkan')
+      }
+
+      try {
+        await new Promise<void>((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(
+            pos => {
+              setGpsCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
+              resolve()
+            },
+            () => reject(),
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
+          )
+        )
+      } catch {
+        // GPS optional — akan diminta lagi saat absen
+      }
+    }, 1500)
+    return () => clearTimeout(t)
+  }, [projectId])
+
   // Init
   useEffect(() => {
     const pId = localStorage.getItem('kiosk_project_id')
@@ -426,6 +459,12 @@ export default function UserPage() {
           onHistoryClick={() => setShowHistory(!showHistory)}
           onOvertimeClick={() => setShowOvertime(true)}
         />
+
+        {!permissionReady && permissionStatus && (
+          <div className="p-3 bg-blue-50 text-blue-700 text-xs rounded-xl border border-blue-100 animate-fade-up">
+            {permissionStatus}
+          </div>
+        )}
 
         {errorMsg && (
           <div className="alert-error animate-fade-up">
