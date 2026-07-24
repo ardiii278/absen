@@ -1,18 +1,30 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
+import RegisterWorkerModal from '@/components/user/RegisterWorkerModal'
 
 export default function UserRegisterPage() {
   const router = useRouter()
+  const projectId = useSyncExternalStore(
+    () => () => {},
+    () => localStorage.getItem('kiosk_project_id'),
+    () => null
+  )
 
   useEffect(() => {
-    router.replace('/user')
-  }, [router])
+    if (!projectId) router.replace('/login')
+  }, [projectId, router])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <p className="text-slate-400 text-sm">Mengalihkan...</p>
-    </div>
+    <main className="min-h-screen bg-slate-100">
+      {projectId && (
+        <RegisterWorkerModal
+          isOpen
+          projectId={projectId}
+          onClose={() => router.replace('/user')}
+        />
+      )}
+    </main>
   )
 }

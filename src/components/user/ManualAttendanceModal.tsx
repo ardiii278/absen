@@ -6,6 +6,7 @@ import { UserWorker, MANUAL_NOTES } from '@/types/user'
 import { watermark } from '@/lib/watermark'
 import { playBeepSuccess } from '@/lib/audio'
 import Modal from '@/components/ui/Modal'
+import { attachCameraStream, getCameraErrorMessage, openCamera } from '@/lib/camera'
 
 interface ManualAttendanceModalProps {
   isOpen: boolean
@@ -69,14 +70,18 @@ export default function ManualAttendanceModal({
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-      }
+      setCooldownMsg(null)
       setCameraActive(true)
-    } catch {
-      setCooldownMsg('Gagal mengakses kamera.')
+      const stream = await openCamera('environment')
+      streamRef.current = stream
+      for (let attempt = 0; attempt < 20 && !videoRef.current; attempt++) {
+        await new Promise(resolve => window.setTimeout(resolve, 50))
+      }
+      if (!videoRef.current) throw new Error('Tampilan kamera gagal dibuka.')
+      await attachCameraStream(videoRef.current, stream)
+    } catch (error) {
+      stopCamera()
+      setCooldownMsg(getCameraErrorMessage(error))
     }
   }
 

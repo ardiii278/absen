@@ -5,6 +5,7 @@ import { Camera, CheckCircle, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { extractDescriptorFromBlob } from '@/lib/face/api'
 import Modal from '@/components/ui/Modal'
+import { attachCameraStream, getCameraErrorMessage, openCamera } from '@/lib/camera'
 
 interface RegisterWorkerModalProps {
   isOpen: boolean
@@ -28,6 +29,14 @@ export default function RegisterWorkerModal({ isOpen, onClose, projectId }: Regi
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+
+  const waitForVideo = async () => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (videoRef.current) return videoRef.current
+      await new Promise(resolve => window.setTimeout(resolve, 50))
+    }
+    throw new Error('Tampilan kamera gagal dibuka.')
+  }
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -55,49 +64,49 @@ export default function RegisterWorkerModal({ isOpen, onClose, projectId }: Regi
   }
 
   const startCamera = async (type: 'profile' | 'ktp') => {
+    setErrorMsg(null)
+    stopCamera()
     setPhotoType(type)
     const mode = type === 'profile' ? 'user' : 'environment'
     setFacingMode(mode)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: mode },
-        audio: false
-      })
+      setCameraActive(true)
+      const stream = await openCamera(mode)
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        setCameraActive(true)
-      }
-    } catch {
-      setErrorMsg('Gagal mengakses kamera. Pastikan HTTPS dan izin aktif.')
-      setCameraActive(false)
+      await attachCameraStream(await waitForVideo(), stream)
+    } catch (error) {
+      stopCamera()
+      setErrorMsg(getCameraErrorMessage(error))
     }
   }
 
   const switchCamera = async () => {
     if (!streamRef.current) return
-    streamRef.current.getTracks().forEach(t => t.stop())
     const newMode: 'user' | 'environment' = facingMode === 'user' ? 'environment' : 'user'
-    setFacingMode(newMode)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: newMode },
-        audio: false
-      })
+      setErrorMsg(null)
+      streamRef.current.getTracks().forEach(t => t.stop())
+      const stream = await openCamera(newMode)
       streamRef.current = stream
-      if (videoRef.current) videoRef.current.srcObject = stream
-    } catch {
-      setErrorMsg('Gagal beralih kamera.')
+      await attachCameraStream(await waitForVideo(), stream)
+      setFacingMode(newMode)
+    } catch (error) {
+      stopCamera()
+      setErrorMsg(getCameraErrorMessage(error))
     }
   }
 
   const capturePhoto = () => {
-    if (!videoRef.current) return
+    if (!videoRef.current || videoRef.current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !videoRef.current.videoWidth) {
+      setErrorMsg('Gambar kamera belum siap. Tunggu sebentar lalu coba lagi.')
+      return
+    }
     const canvas = document.createElement('canvas')
-    canvas.width = 640; canvas.height = 480
+    canvas.width = videoRef.current.videoWidth
+    canvas.height = videoRef.current.videoHeight
     const ctx = canvas.getContext('2d')
     if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0, 640, 480)
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
       if (photoType === 'profile') setProfilePhoto(dataUrl)
       if (photoType === 'ktp') setKtpPhoto(dataUrl)

@@ -7,6 +7,7 @@ import { createFaceMatcher } from '@/lib/face/matcher'
 import { watermark } from '@/lib/watermark'
 import { playBeepError, playBeepSuccess } from '@/lib/audio'
 import { UserWorker, ScanResult } from '@/types/user'
+import { attachCameraStream, getCameraErrorMessage, openCamera } from '@/lib/camera'
 
 interface UserScannerProps {
   workers: UserWorker[]
@@ -110,25 +111,15 @@ export default function UserScanner({
         throw new Error('Belum ada pekerja dengan data wajah valid. Gunakan Absen Manual atau daftarkan ulang foto profil.')
       }
       await loadFaceApiModels()
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: { ideal: 'user' } },
-        audio: false
-      })
+      const stream = await openCamera('user')
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play().catch(() => {})
-      }
+      if (!videoRef.current) throw new Error('Tampilan kamera gagal dibuka.')
+      await attachCameraStream(videoRef.current, stream)
       deadlineRef.current = Date.now() + 10000
       setTimeRemaining(10)
       setCameraActive(true)
       setModelLoading(false)
 
-      // Wait for video to be ready (max 3s), then start scanning
-      const startTime = Date.now()
-      while (videoRef.current && videoRef.current.readyState < 2 && Date.now() - startTime < 3000) {
-        await new Promise(r => setTimeout(r, 100))
-      }
       if (videoRef.current && videoRef.current.readyState >= 2) {
         scanIntervalRef.current = setInterval(attemptMatch, 700)
       } else {
@@ -138,18 +129,11 @@ export default function UserScanner({
     } catch (error: unknown) {
       setModelLoading(false)
       playBeepError()
-      let message = 'Kamera atau model wajah gagal dimuat.'
-      if (error instanceof DOMException) {
-        if (error.name === 'NotAllowedError') {
-          message = 'Izin kamera ditolak. Buka pengaturan browser dan izinkan akses kamera.'
-        } else if (error.name === 'NotFoundError') {
-          message = 'Kamera tidak ditemukan di perangkat ini.'
-        } else if (error.name === 'NotReadableError') {
-          message = 'Kamera sedang digunakan aplikasi lain. Tutup aplikasi lain lalu coba lagi.'
-        } else if (error.name === 'SecurityError') {
-          message = 'Akses kamera hanya bisa via HTTPS. Gunakan https:// di URL atau deploy ke Netlify.'
-        }
-      }
+      streamRef.current?.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+      const message = error instanceof Error && !(error instanceof DOMException)
+        ? error.message
+        : getCameraErrorMessage(error)
       setMatchResult({ success: false, message })
     }
   }, [attemptMatch, workers])
