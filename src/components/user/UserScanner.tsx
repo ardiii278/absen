@@ -111,27 +111,30 @@ export default function UserScanner({
       }
       await loadFaceApiModels()
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: { ideal: 'user' } },
         audio: false
       })
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
-        try { await videoRef.current.play() } catch {}
+        await videoRef.current.play().catch(() => {})
       }
       deadlineRef.current = Date.now() + 10000
       setTimeRemaining(10)
       setCameraActive(true)
       setModelLoading(false)
 
-      await new Promise<void>(resolve => {
-        const video = videoRef.current
-        if (!video) return resolve()
-        if (video.readyState >= 2) return resolve()
-        const onReady = () => { video.removeEventListener('loadeddata', onReady); resolve() }
-        video.addEventListener('loadeddata', onReady, { once: true })
-      })
-      scanIntervalRef.current = setInterval(attemptMatch, 700)
+      // Wait for video to be ready (max 3s), then start scanning
+      const startTime = Date.now()
+      while (videoRef.current && videoRef.current.readyState < 2 && Date.now() - startTime < 3000) {
+        await new Promise(r => setTimeout(r, 100))
+      }
+      if (videoRef.current && videoRef.current.readyState >= 2) {
+        scanIntervalRef.current = setInterval(attemptMatch, 700)
+      } else {
+        playBeepError()
+        setMatchResult({ success: false, message: 'Gagal memulai kamera. Coba lagi atau gunakan Absen Manual.' })
+      }
     } catch (error: unknown) {
       setModelLoading(false)
       playBeepError()

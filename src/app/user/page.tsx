@@ -296,7 +296,7 @@ export default function UserPage() {
     setScanMode(null)
   }, [scanMode, projectId, gpsCoords, submitOrQueue])
 
-  // Pre-request camera & GPS permissions on page load
+  // Check camera permission status on page load (no stream request)
   useEffect(() => {
     if (!projectId) return
     const t = setTimeout(async () => {
@@ -304,32 +304,23 @@ export default function UserPage() {
         const status = await navigator.permissions.query({ name: 'camera' as PermissionName })
         if (status.state === 'granted') {
           setPermissionReady(true)
-          setPermissionStatus('Kamera siap digunakan')
-        } else if (status.state === 'prompt') {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false })
-          stream.getTracks().forEach(track => track.stop())
-          setPermissionReady(true)
-          setPermissionStatus('Kamera siap digunakan')
+          setPermissionStatus('Kamera siap')
         } else {
-          setPermissionStatus('Izin kamera belum diberikan — klik tombol absen untuk mengaktifkan')
+          setPermissionStatus(null)
         }
       } catch {
-        setPermissionStatus('Klik tombol absen untuk mengaktifkan kamera')
+        setPermissionStatus(null)
       }
 
       try {
-        await new Promise<void>((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(
-            pos => {
-              setGpsCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
-              resolve()
-            },
-            () => reject(),
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject,
             { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
           )
         )
+        setGpsCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
       } catch {
-        // GPS optional — akan diminta lagi saat absen
+        // GPS diminta lagi saat absen
       }
     }, 1500)
     return () => clearTimeout(t)
